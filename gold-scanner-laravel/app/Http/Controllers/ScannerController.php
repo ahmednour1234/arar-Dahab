@@ -99,6 +99,19 @@ class ScannerController extends Controller
         $meta = ['data_state' => $st['state'], 'last_success' => $st['last_success'], 'last_error' => $st['last_error']];
         $key = InventoryParser::normalizeKey($barcode, (bool) $this->cfg('case_insensitive_barcodes', true));
         $recs = $snap['records'][$key] ?? [];
+        $matchedAs = null;
+        if (! $recs && preg_match('/^\d+$/', $key)) {
+            $want = ltrim($key, '0');
+            foreach ($snap['records'] as $k => $list) {
+                if (preg_match('/^\d+$/', (string) $k) && ltrim((string) $k, '0') === $want) {
+                    $recs = array_merge($recs, $list);
+                    $matchedAs = (string) $k;
+                }
+            }
+        }
+        if ($matchedAs !== null) {
+            $meta['matched_as'] = $matchedAs;   // e.g. scanned 000464, stored as 464
+        }
 
         if (! $recs) {
             return response()->json(['detail' => 'القطعة غير موجودة في ملف المخزون', 'barcode' => trim($barcode)] + $meta, 404);

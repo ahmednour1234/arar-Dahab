@@ -233,6 +233,7 @@
             '<div class="stat"><div class="k">' + label("weight", "الوزن") + '</div><div class="v">' + (f.weight ? fmtNum(f.weight) + " <small>جم</small>" : "—") + "</div></div>" +
           "</div>" +
           '<div class="price"><span class="muted">السعر المخزّن</span><span class="v">' + (f.price ? fmtNum(f.price) + ' <small class="muted">ر.س</small>' : "—") + "</span></div>" +
+          (body.matched_as ? '<p class="stale-note">ℹ تم العثور على القطعة بدون الأصفار: الباركود الممسوح <b dir="ltr">' + esc(code) + '</b> ومسجل في الملف <b dir="ltr">' + esc(body.matched_as) + "</b></p>" : "") +
           staleNote(body) +
         "</article>" +
         '<section class="details"><dl>' +

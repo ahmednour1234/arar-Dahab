@@ -31,16 +31,16 @@ return [
 
     // field => accepted header names (case-insensitive, Arabic or English)
     'columns' => [
-        'barcode' => ['Barcode', 'الباركود', 'باركود'],
-        'item_name' => ['Item Name', 'اسم القطعة', 'الصنف'],
-        'category' => ['Category', 'الفئة', 'التصنيف'],
-        'karat' => ['Karat', 'العيار'],
-        'weight' => ['Weight', 'الوزن'],
-        'making_charge' => ['Making Charge', 'المصنعية'],
-        'price' => ['Price', 'السعر'],
+        'barcode' => ['Barcode', 'Bar Code', 'الباركود', 'باركود', 'رقم الباركود', 'كود الباركود', 'SKU', 'رقم القطعة', 'الكود', 'Code'],
+        'item_name' => ['Item Name', 'Item', 'Description', 'Name', 'اسم القطعة', 'البيان', 'الوصف', 'اسم الصنف', 'الاسم', 'الصنف'],
+        'category' => ['Category', 'Type', 'Group', 'الفئة', 'التصنيف', 'النوع', 'المجموعة'],
+        'karat' => ['Karat', 'Carat', 'Purity', 'العيار', 'عيار'],
+        'weight' => ['Weight', 'الوزن', 'وزن'],
+        'making_charge' => ['Making Charge', 'Making', 'المصنعية', 'مصنعية', 'الاجره', 'الأجرة'],
+        'price' => ['Price', 'السعر', 'سعر', 'القيمة'],
         'status' => ['Status', 'الحالة'],
-        'branch' => ['Branch', 'الفرع'],
-        'notes' => ['Notes', 'ملاحظات'],
+        'branch' => ['Branch', 'الفرع', 'المعرض'],
+        'notes' => ['Notes', 'Note', 'ملاحظات', 'ملاحظة'],
     ],
 
     // Display order + Arabic labels

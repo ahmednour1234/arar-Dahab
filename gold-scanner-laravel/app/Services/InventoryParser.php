@@ -98,12 +98,14 @@ class InventoryParser
             }
             $target = $wanted;
         } else {
-            $target = [$names[0]];
+            $target = $names;                 // all sheets; ones without a barcode column are skipped
         }
 
         $records = [];
         $fingerprint = [];
         $warnings = [];
+        $skipped = [];
+        $sheetsUsed = [];
         $total = 0;
         $hdr = max((int) ($this->cfg['header_row'] ?? 1), 1);
         $labels = $this->cfg['fields'] ?? [];
@@ -114,19 +116,27 @@ class InventoryParser
             $sh = $book->getSheetByName($sname);
             $maxRow = $sh->getHighestDataRow();
             $maxCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sh->getHighestDataColumn());
-            $headers = [];
-            for ($c = 1; $c <= $maxCol; $c++) {
-                $headers[$c] = self::cellText($sh->getCell([$c, $hdr]));
+            // header row: the configured one, else the first of rows 1..15 that has a barcode column
+            $found = null;
+            foreach (array_unique(array_merge([$hdr], range(1, min(15, max(1, $maxRow))))) as $tryRow) {
+                $headers = [];
+                for ($c = 1; $c <= $maxCol; $c++) {
+                    $headers[$c] = self::cellText($sh->getCell([$c, $tryRow]));
+                }
+                [$mapped, $extras] = $this->mapHeaders($headers);
+                if (isset($mapped['barcode'])) {
+                    $found = $tryRow;
+                    break;
+                }
             }
-            [$mapped, $extras] = $this->mapHeaders($headers);
-            if (! isset($mapped['barcode'])) {
-                throw new InventoryReadException("عمود الباركود غير موجود في ورقة '{$sname}'. راجع إعداد columns.barcode");
-            }
-            if ($maxRow <= $hdr) {
-                $warnings[] = "ورقة العمل '{$sname}' لا تحتوي على بيانات";
+            if ($found === null) {
+                if ($maxRow > 1) {
+                    $skipped[] = $sname;
+                }
                 continue;
             }
-            for ($r = $hdr + 1; $r <= $maxRow; $r++) {
+            $sheetsUsed[] = $sname;
+            for ($r = $found + 1; $r <= $maxRow; $r++) {
                 $barcode = self::cellText($sh->getCell([$mapped['barcode'], $r]));
                 if ($barcode === '') {
                     continue;
@@ -136,6 +146,9 @@ class InventoryParser
                     $fields[$key] = self::cellText($sh->getCell([$col, $r]));
                 }
                 $fields['barcode'] = $barcode;
+                if (isset($fields['karat']) && ($k = self::karatFromFineness($fields['karat'])) !== null) {
+                    $fields['karat'] = $k.' ('.$fields['karat'].')';   // 875 -> "21 (875)"
+                }
                 $extra = [];
                 if ($this->cfg['include_unmapped_columns'] ?? true) {
                     foreach ($extras as $col => $h) {
@@ -158,6 +171,12 @@ class InventoryParser
             }
         }
         $book->disconnectWorksheets();
+        if (! $sheetsUsed) {
+            throw new InventoryReadException('لم يتم العثور على عمود الباركود في أي ورقة عمل. تأكد أن الملف فيه عمود اسمه "الباركود" أو "Barcode"');
+        }
+        if ($skipped && count($target) > 1) {
+            $warnings[] = 'أوراق عمل بدون عمود باركود تم تجاهلها: '.implode('، ', $skipped);
+        }
         if ($total === 0) {
             // Protects against wiping the inventory with an empty/wrong file.
             throw new InventoryReadException('الملف لا يحتوي على أي قطعة بباركود');
@@ -177,10 +196,29 @@ class InventoryParser
             'records' => $records,
             'duplicates' => $duplicates,
             'total_rows' => $total,
-            'sheets' => array_values($target),
+            'sheets' => $sheetsUsed,
             'warnings' => $warnings,
             'fingerprint' => $fingerprint,
         ];
+    }
+
+    /** Normalize a header for matching: case, spaces, tatweel, diacritics, alef/ya/ta-marbuta forms, punctuation. */
+    public static function normHeader(string $h): string
+    {
+        $h = mb_strtolower(trim($h));
+        $h = preg_replace('/[\x{064B}-\x{065F}\x{0670}\x{0640}]/u', '', $h);      // diacritics + tatweel
+        $h = strtr($h, ['أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ٱ' => 'ا', 'ى' => 'ي', 'ة' => 'ه', 'ؤ' => 'و', 'ئ' => 'ي']);
+        $h = preg_replace('/[\s\p{P}\p{S}]+/u', '', $h);                            // spaces & punctuation
+
+        return $h;
+    }
+
+    /** Gold fineness (parts per thousand) -> karat, e.g. 875 -> 21. */
+    public static function karatFromFineness(string $v): ?string
+    {
+        $map = ['999' => '24', '995' => '24', '916' => '22', '917' => '22', '875' => '21', '750' => '18', '585' => '14', '583' => '14', '417' => '10', '375' => '9'];
+
+        return $map[trim($v)] ?? null;
     }
 
     private function mapHeaders(array $headers): array
@@ -188,16 +226,33 @@ class InventoryParser
         $norm = [];
         foreach ($headers as $col => $h) {
             if ($h !== '') {
-                $norm[mb_strtolower(trim($h))] ??= $col;
+                $norm[$col] = self::normHeader($h);
             }
         }
         $mapped = [];
-        foreach ($this->cfg['columns'] ?? [] as $key => $aliases) {
-            foreach ((array) $aliases as $alias) {
-                $col = $norm[mb_strtolower(trim($alias))] ?? null;
-                if ($col !== null) {
-                    $mapped[$key] = $col;
-                    break;
+        $taken = [];
+        $columns = $this->cfg['columns'] ?? [];
+        // pass 1: exact (normalized) match, pass 2: header contains the alias (e.g. "الوزن جرام")
+        foreach ([false, true] as $contains) {
+            foreach ($columns as $key => $aliases) {
+                if (isset($mapped[$key])) {
+                    continue;
+                }
+                foreach ((array) $aliases as $alias) {
+                    $a = self::normHeader($alias);
+                    if ($a === '' || ($contains && mb_strlen($a) < 3)) {
+                        continue;
+                    }
+                    foreach ($norm as $col => $h) {
+                        if (isset($taken[$col])) {
+                            continue;
+                        }
+                        if ($h === $a || ($contains && str_contains($h, $a))) {
+                            $mapped[$key] = $col;
+                            $taken[$col] = true;
+                            continue 3;
+                        }
+                    }
                 }
             }
         }

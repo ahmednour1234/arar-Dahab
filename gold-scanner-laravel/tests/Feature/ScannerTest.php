@@ -250,6 +250,57 @@ class ScannerTest extends TestCase
         $this->getJson('/api/live?channel=counter1')->assertStatus(401);           // access key required
     }
 
+    public function test_real_client_layout_is_understood(): void
+    {
+        $book = new Spreadsheet;
+        // sheet 1: empty-ish notes sheet (no barcode column) -> skipped, not an error
+        $book->getActiveSheet()->setTitle('ورقة1')->setCellValue('A1', 'ملاحظات عامة')->setCellValue('A2', 'نص');
+        // sheet 2: title row, then header with "البا ركود" (space inside), fineness karat, blank rows
+        $sh = $book->createSheet()->setTitle('تقرير جرد الملصقات');
+        $sh->setCellValue('A1', 'تقرير جرد الملصقات - فرع عرعر');
+        $sh->fromArray(['البا ركود', 'الصنف', 'البيان', 'العيار', 'الوزن', 'المقاس'], null, 'A3');
+        $rows = [['000001', 'SH1M1211', 'اطقم مصنع محلي', 875, 14.9, ''], [464, 'HAM1211', 'خاتم ذهب مصنع محلي', 875, 0.95, '17'],
+                 null, null, ['000460', 'HAM1181', 'خاتم ذهب مصنع محلي', 750, 1.03, '']];
+        $r = 4;
+        foreach ($rows as $row) {
+            if ($row) {
+                $sh->setCellValueExplicit([1, $r], (string) $row[0], is_int($row[0]) ? DataType::TYPE_NUMERIC : DataType::TYPE_STRING);
+                for ($c = 1; $c < 6; $c++) {
+                    $sh->setCellValue([$c + 1, $r], $row[$c]);
+                }
+            }
+            $r++;
+        }
+        IOFactory::createWriter($book, 'Xlsx')->save($f = $this->dir.'/client.xlsx');
+
+        $s = (new InventoryParser(config('goldscanner')))->parseFile($f);
+        $this->assertSame(['تقرير جرد الملصقات'], $s['sheets']);
+        $this->assertSame(3, $s['total_rows']);
+        $rec = $s['records']['000460'][0];
+        $this->assertSame('خاتم ذهب مصنع محلي', $rec['fields']['item_name']);   // البيان -> item name
+        $this->assertSame('18 (750)', $rec['fields']['karat']);                 // fineness -> karat
+        $this->assertSame('1.03', $rec['fields']['weight']);
+        $this->assertContains(['label' => 'الصنف', 'value' => 'HAM1181'], $rec['extra']);
+        $this->assertSame(8, $rec['location']['row']);   // header found on row 3, two blank rows skipped
+
+        // upload it, then scan the printed label "000464" (stored as the number 464)
+        $this->call('POST', '/api/admin/upload', [], [], [],
+            $this->server(['X-Admin-Key' => 'adm', 'X-Filename' => 'client.xlsx']), file_get_contents($f))->assertOk();
+        $hit = $this->getJson('/api/item/000464', $this->h)->assertOk();
+        $this->assertSame('464', $hit->json('matched_as'));
+        $this->assertSame('21 (875)', $hit->json('item.fields.karat'));
+        $this->getJson('/api/item/000001', $this->h)->assertOk();
+    }
+
+    public function test_header_normalization(): void
+    {
+        $n = fn ($s) => InventoryParser::normHeader($s);
+        $this->assertSame($n('الباركود'), $n('البا ركود'));
+        $this->assertSame($n('الباركود'), $n(' الـبـاركـود '));
+        $this->assertSame($n('الأجرة'), $n('الاجره'));
+        $this->assertSame($n('Bar Code'), $n('bar-code'));
+    }
+
     public function test_csv_upload(): void
     {
         $csv = "Barcode,Item Name,Price\nCSV-1,قطعة من CSV,99\n";
