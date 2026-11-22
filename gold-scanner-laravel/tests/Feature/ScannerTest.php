@@ -218,6 +218,18 @@ class ScannerTest extends TestCase
         $this->assertSame('حلق ذهب', $s2['records']['0042'][0]['fields']['item_name']);
     }
 
+    public function test_empty_admin_key_allows_upload_with_access_key_only(): void
+    {
+        config(['goldscanner.admin_key' => '']);
+        $this->getJson('/api/config/status')->assertJsonPath('admin_required', false);
+        $csv = "Barcode,Item Name\nNOADMIN-1,x\n";
+        $this->call('POST', '/api/admin/upload', [], [], [],
+            ['CONTENT_TYPE' => 'application/octet-stream', 'HTTP_X_ACCESS_KEY' => 'k', 'HTTP_X_FILENAME' => 'n.csv'], $csv)->assertOk();
+        // the access key is still required
+        $this->call('POST', '/api/admin/upload', [], [], [],
+            ['CONTENT_TYPE' => 'application/octet-stream', 'HTTP_X_FILENAME' => 'n.csv'], $csv)->assertStatus(401);
+    }
+
     public function test_csv_upload(): void
     {
         $csv = "Barcode,Item Name,Price\nCSV-1,قطعة من CSV,99\n";

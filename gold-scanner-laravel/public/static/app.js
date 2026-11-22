@@ -396,7 +396,7 @@
     if (!f) return say(false, "اختر ملف Excel أولاً.");
     if (!/\.(xlsx?|csv)$/i.test(f.name)) return say(false, "الملف يجب أن يكون بصيغة <b dir=\"ltr\">.xls</b> أو <b dir=\"ltr\">.xlsx</b> أو <b dir=\"ltr\">.csv</b>.");
     const admin = $("adminKey").value.trim();
-    if (!admin) return say(false, "أدخل مفتاح المسؤول.");
+    if (!admin && state.cfg.admin_required) return say(false, "أدخل مفتاح المسؤول.");
     $("uploadBtn").disabled = true;
     $("uploadBtn").textContent = "جارٍ الرفع والفحص…";
     try {
@@ -503,7 +503,7 @@
     const b = e.target.closest("[data-del]");
     if (!b) return;
     const admin = $("adminKey").value.trim();
-    if (!admin) { toast("أدخل مفتاح المسؤول أولاً"); $("adminKey").focus(); return; }
+    if (!admin && state.cfg.admin_required) { toast("أدخل مفتاح المسؤول أولاً"); $("adminKey").focus(); return; }
     if (!confirm("حذف الملف \"" + b.dataset.name + "\"؟ (تُحفظ نسخة احتياطية على الخادم)")) return;
     try {
       const res = await fetch(BASE + "/api/admin/files/" + b.dataset.del, {
@@ -604,6 +604,7 @@
   async function startApp() {
     show("viewScan");
     $("uploadOpen").hidden = !state.cfg.upload_enabled;
+    $("adminKey").hidden = !state.cfg.admin_required;
     await pollHealth();
     loadFiles();
     loadDemo();

@@ -43,6 +43,7 @@ class ScannerController extends Controller
             'poll_interval_seconds' => $this->cfg('poll_interval_seconds', 5),
             'fields' => $fields,
             'upload_enabled' => (bool) $this->cfg('upload_enabled'),
+            'admin_required' => (string) $this->cfg('admin_key') !== '',
         ]);
     }
 
@@ -137,7 +138,7 @@ class ScannerController extends Controller
             return response()->json(['detail' => 'رفع الملفات غير مفعّل'], 404);
         }
         $admin = (string) $this->cfg('admin_key');
-        if ($admin === '' || ! hash_equals($admin, (string) $request->header('X-Admin-Key', ''))) {
+        if ($admin !== '' && ! hash_equals($admin, (string) $request->header('X-Admin-Key', ''))) {
             return response()->json(['detail' => 'مفتاح المسؤول غير صحيح'], 401);
         }
         $limit = (int) ($this->cfg('max_upload_mb', 20) * 1024 * 1024);
@@ -242,7 +243,7 @@ class ScannerController extends Controller
         if (! $this->cfg('upload_enabled')) {
             return response()->json(['detail' => 'رفع الملفات غير مفعّل'], 404);
         }
-        if ($admin === '' || ! hash_equals($admin, (string) $request->header('X-Admin-Key', ''))) {
+        if ($admin !== '' && ! hash_equals($admin, (string) $request->header('X-Admin-Key', ''))) {
             return response()->json(['detail' => 'مفتاح المسؤول غير صحيح'], 401);
         }
         if (! $this->store->deleteFile($id)) {
