@@ -11,6 +11,9 @@
     # Block direct access to app internals
     RewriteRule ^(app|bootstrap|config|database|resources|routes|storage|tests|vendor)(/|$) - [F,L]
     RewriteRule ^(composer\.(json|lock)|artisan|phpunit\.xml|package\.json|vite\.config\.js|README\.md)$ - [F,L]
+    # Old links like /public/... -> redirect to the clean URL (THE_REQUEST = what the browser asked for)
+    RewriteCond %{THE_REQUEST} ^[A-Z]+\s/public(/|\s|\?)
+    RewriteRule ^public/?(.*)$ /$1 [R=301,L,NE]
     # Send everything else into public/
     RewriteCond %{REQUEST_URI} !^/public/
     RewriteRule ^(.*)$ public/$1 [L]
