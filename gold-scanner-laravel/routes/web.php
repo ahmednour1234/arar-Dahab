@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\ScannerController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', fn () => response()->view('scanner')->header('Cache-Control', 'no-store'));
+// Controller (not a closure) so `php artisan route:cache` works.
+Route::get('/', [ScannerController::class, 'page']);

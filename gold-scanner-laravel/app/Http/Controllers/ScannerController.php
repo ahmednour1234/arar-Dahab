@@ -20,6 +20,11 @@ class ScannerController extends Controller
         return config('goldscanner.'.$k, $default);
     }
 
+    public function page()
+    {
+        return response()->view('scanner')->header('Cache-Control', 'no-store');
+    }
+
     public function configStatus(): JsonResponse
     {
         $fields = [];
