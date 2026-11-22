@@ -19,6 +19,7 @@
       </div>
     </div>
     <div class="top-actions">
+    <a class="icon-btn help-link" href="{{ url('/help') }}" title="شرح الاستخدام" aria-label="شرح الاستخدام">؟</a>
     <button type="button" class="icon-btn" id="listOpen" title="كل الباركودات" aria-label="كل الباركودات">
       <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
@@ -44,6 +45,7 @@
           <button class="btn gold" type="submit">دخول</button>
         </form>
         <p class="error" id="keyError" hidden></p>
+        <p class="small"><a class="inline-link" href="{{ url('/help') }}">شرح الاستخدام</a></p>
       </div>
     </section>
 

@@ -176,6 +176,8 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(212,175,55,.
 .up-ok { background: rgba(76,195,138,.1); border: 1px solid rgba(76,195,138,.4); color: #9be3bf; }
 .up-err { background: rgba(239,83,80,.1); border: 1px solid rgba(239,83,80,.45); color: #ffb3b1; }
 
+.help-link { text-decoration: none; font-weight: 800; font-size: 1.05rem; }
+.inline-link { color: var(--gold2); }
 /* ---------- multi-file, list, copy ---------- */
 .select { font: inherit; color: var(--text); background: var(--bg2); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
 .select:focus { border-color: var(--gold); outline: none; }

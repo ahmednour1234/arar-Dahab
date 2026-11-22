@@ -25,6 +25,11 @@ class ScannerController extends Controller
         return response()->view('scanner')->header('Cache-Control', 'no-store');
     }
 
+    public function help()
+    {
+        return response()->view('help');
+    }
+
     public function configStatus(): JsonResponse
     {
         $fields = [];
