@@ -292,6 +292,38 @@ class ScannerTest extends TestCase
         $this->getJson('/api/item/000001', $this->h)->assertOk();
     }
 
+    public function test_large_client_file_hidden_chars_and_number_format(): void
+    {
+        $book = new Spreadsheet;
+        $sh = $book->getActiveSheet()->setTitle('تقرير جرد الملصقات');
+        $sh->fromArray(['البا ركود', 'الصنف', 'البيان', 'العيار', 'الوزن', 'المقاس'], null, 'A1');
+        for ($i = 1; $i <= 1100; $i++) {
+            $code = str_pad((string) $i, 6, '0', STR_PAD_LEFT);
+            if ($i % 7 === 0) {
+                $code .= "\u{00A0}";             // trailing non-breaking space (common in exported sheets)
+            }
+            $sh->setCellValueExplicit([1, $i + 1], $code, DataType::TYPE_STRING);
+            $sh->fromArray(['M1212', 'تعليقة صغيرة مصنع محلي', 875, 0.22], null, 'B'.($i + 1));
+        }
+        // a barcode stored as a NUMBER with display format 000000
+        $sh->setCellValue('A1102', 5000.0)->getStyle('A1102')->getNumberFormat()->setFormatCode('000000');
+        $sh->setCellValue('C1102', 'قطعة رقمية');
+        IOFactory::createWriter($book, 'Xlsx')->save($f = $this->dir.'/big.xlsx');
+
+        $this->call('POST', '/api/admin/upload', [], [], [],
+            $this->server(['X-Admin-Key' => 'adm', 'X-Filename' => rawurlencode('نسخة من الخليج اخر نسخة1.xlsx')]), file_get_contents($f))
+            ->assertOk();
+
+        $this->getJson('/api/item/001090', $this->h)->assertOk()->assertJsonPath('item.fields.item_name', 'تعليقة صغيرة مصنع محلي');
+        $this->getJson('/api/item/001092', $this->h)->assertOk();                  // 1092 % 7 == 0 -> had NBSP
+        $this->getJson('/api/item/'.rawurlencode("001092\u{200F}"), $this->h)->assertOk(); // scanner sent an RTL mark
+        $this->getJson('/api/item/005000', $this->h)->assertOk()->assertJsonPath('item.fields.barcode', '005000');
+        $this->getJson('/api/item/000336', $this->h)->assertOk();
+        $this->getJson('/api/item/777660', $this->h)->assertStatus(404);
+
+        $this->artisan('gold:find', ['barcode' => '001090'])->expectsOutputToContain('FOUND (exact)')->assertExitCode(0);
+    }
+
     public function test_header_normalization(): void
     {
         $n = fn ($s) => InventoryParser::normHeader($s);

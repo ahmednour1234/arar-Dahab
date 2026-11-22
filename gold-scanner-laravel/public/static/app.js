@@ -19,6 +19,7 @@
   const isTouch = window.matchMedia("(pointer: coarse)").matches;
 
   // ---------- helpers ----------
+  function cleanCode(s) { return String(s == null ? "" : s).replace(/[\s\u00A0\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u0640]+/g, ""); }
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -157,7 +158,7 @@
 
   // ---------- search ----------
   async function search(raw) {
-    const code = String(raw || "").trim();
+    const code = cleanCode(raw);
     $("scanError").hidden = true;
     if (!code) { focusInput(); return; }
     if (!/^[0-9A-Za-z\-_.\/ ]{1,64}$/.test(code)) {
@@ -302,8 +303,9 @@
   });
 
   // ---------- phone camera scanning ----------
-  const cam = { stream: null, reader: null, timer: null, done: false };
-  const FORMATS = ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "code_39", "code_93", "itf", "codabar", "qr_code", "data_matrix"];
+  const cam = { stream: null, reader: null, timer: null, done: false, last: "", hits: 0 };
+  // ITF / Codabar removed: they produce false reads on small jewelry labels
+  const FORMATS = ["code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"];
 
   function camFail(msg) {
     $("camError").innerHTML = msg;
@@ -313,6 +315,11 @@
 
   function onCameraCode(text) {
     if (cam.done || !text) return;
+    const t = cleanCode(text);
+    // accept only when the same value is decoded twice in a row (filters misreads)
+    if (t !== cam.last) { cam.last = t; cam.hits = 1; return; }
+    if (++cam.hits < 2) return;
+    text = t;
     cam.done = true;
     if (navigator.vibrate) navigator.vibrate(80);
     stopCamera();
@@ -322,7 +329,7 @@
   async function openCamera() {
     $("camError").hidden = true;
     $("camHint").hidden = false;
-    cam.done = false;
+    cam.done = false; cam.last = ""; cam.hits = 0;
     show("viewCamera");
     if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       camFail("المتصفح يسمح باستخدام الكاميرا فقط عبر اتصال آمن <b dir=\"ltr\">https://</b>.<br>شغّل الخادم بشهادة HTTPS (راجع ملف README) ثم افتح الرابط بـ https.");
@@ -356,6 +363,9 @@
       } else if (window.ZXing) {
         const hints = new Map();
         hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+        const BF = window.ZXing.BarcodeFormat;
+        hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS,
+          [BF.CODE_128, BF.CODE_39, BF.CODE_93, BF.EAN_13, BF.EAN_8, BF.UPC_A, BF.UPC_E, BF.QR_CODE]);
         cam.reader = new window.ZXing.BrowserMultiFormatReader(hints, 150);
         await cam.reader.decodeFromConstraints(
           { video: { facingMode: { ideal: "environment" } }, audio: false }, video,

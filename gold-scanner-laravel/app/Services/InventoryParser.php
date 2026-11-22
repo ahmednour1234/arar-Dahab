@@ -17,16 +17,41 @@ class InventoryParser
     {
     }
 
+    /** Remove spaces and invisible characters (NBSP, zero-width, BOM, RTL/LTR marks) from a barcode. */
+    public static function cleanBarcode(string $s): string
+    {
+        return (string) preg_replace('/[\s\x{00A0}\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}\x{FEFF}\x{0640}]+/u', '', $s);
+    }
+
     public static function normalizeKey(string $barcode, bool $caseInsensitive = true): string
     {
-        $k = trim($barcode);
+        $k = self::cleanBarcode($barcode);
 
         return $caseInsensitive ? mb_strtoupper($k) : $k;
     }
 
     public static function validBarcode(string $s): bool
     {
-        return (bool) preg_match('/^[0-9A-Za-z\-_.\/ ]{1,64}$/', trim($s)) && trim($s) !== '';
+        $s = self::cleanBarcode($s);
+
+        return $s !== '' && (bool) preg_match('/^[0-9A-Za-z\-_.\/]{1,64}$/', $s);
+    }
+
+    /** Barcode as Excel displays it: numeric cells with a format like 000000 keep their leading zeros. */
+    public static function barcodeText(?Cell $cell): string
+    {
+        if ($cell === null) {
+            return '';
+        }
+        $v = $cell->getValue();
+        if ((is_int($v) || is_float($v)) && floor((float) $v) == $v) {
+            $fmt = $cell->getStyle()->getNumberFormat()->getFormatCode();
+            if (preg_match('/^0+$/', (string) $fmt)) {            // e.g. "000000"
+                return str_pad((string) (int) $v, strlen($fmt), '0', STR_PAD_LEFT);
+            }
+        }
+
+        return self::cellText($cell);
     }
 
     /** Convert a cell to a display string, keeping stored values (and leading zeros of text cells). */
@@ -83,7 +108,7 @@ class InventoryParser
             } else {
                 $reader = IOFactory::createReaderForFile($path);
             }
-            $reader->setReadDataOnly(true);
+            $reader->setReadDataOnly(false);   // keep number formats (barcode 1090 shown as 001090)
             $book = $reader->load($path);
         } catch (Throwable $e) {
             throw new InventoryReadException('تعذر قراءة ملف Excel: '.class_basename($e).': '.$e->getMessage());
@@ -106,6 +131,7 @@ class InventoryParser
         $warnings = [];
         $skipped = [];
         $sheetsUsed = [];
+        $sheetInfo = [];
         $total = 0;
         $hdr = max((int) ($this->cfg['header_row'] ?? 1), 1);
         $labels = $this->cfg['fields'] ?? [];
@@ -136,8 +162,9 @@ class InventoryParser
                 continue;
             }
             $sheetsUsed[] = $sname;
+            $sheetInfo[$sname] = ['header_row' => $found, 'columns' => array_map(fn ($c) => $headers[$c], $mapped)];
             for ($r = $found + 1; $r <= $maxRow; $r++) {
-                $barcode = self::cellText($sh->getCell([$mapped['barcode'], $r]));
+                $barcode = self::cleanBarcode(self::barcodeText($sh->getCell([$mapped['barcode'], $r])));
                 if ($barcode === '') {
                     continue;
                 }
@@ -197,6 +224,7 @@ class InventoryParser
             'duplicates' => $duplicates,
             'total_rows' => $total,
             'sheets' => $sheetsUsed,
+            'sheet_info' => $sheetInfo,
             'warnings' => $warnings,
             'fingerprint' => $fingerprint,
         ];

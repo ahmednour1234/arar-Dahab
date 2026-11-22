@@ -25,6 +25,55 @@ Artisan::command('gold:reload', function (InventoryStore $store) {
     return $ok ? 0 : 1;
 })->purpose('Reload the inventory Excel file');
 
+// php artisan gold:find 001090  -> explains exactly why a barcode is / isn't found
+Artisan::command('gold:find {barcode}', function (InventoryStore $store, string $barcode) {
+    $cfg = config('goldscanner');
+    $key = \App\Services\InventoryParser::normalizeKey($barcode, (bool) ($cfg['case_insensitive_barcodes'] ?? true));
+    $this->line('Searching for: "'.$barcode.'"  (normalized key: "'.$key.'")');
+    $files = $store->files();
+    if (! $files) {
+        $this->error('No Excel files are loaded on the server. Upload the file from the UI first.');
+
+        return 1;
+    }
+    $snaps = $store->snapshots();
+    foreach ($files as $f) {
+        $this->newLine();
+        $this->info("FILE: {$f['name']}  state={$f['state']}  items={$f['records']}");
+        if ($f['last_error']) {
+            $this->error('  last error: '.$f['last_error']);
+        }
+        $s = $snaps[$f['id']] ?? null;
+        if (! $s) {
+            $this->error('  this file has NO loaded data (it failed to parse).');
+            continue;
+        }
+        foreach ($s['sheet_info'] ?? [] as $sheet => $info) {
+            $cols = [];
+            foreach ($info['columns'] as $field => $header) {
+                $cols[] = "{$field}=\"{$header}\"";
+            }
+            $this->line("  sheet \"{$sheet}\": header row {$info['header_row']}, columns: ".implode(', ', $cols));
+        }
+        $this->line('  first barcodes: '.implode(', ', array_slice(array_keys($s['records']), 0, 8)));
+        if (isset($s['records'][$key])) {
+            foreach ($s['records'][$key] as $r) {
+                $this->info("  FOUND (exact) at sheet \"{$r['location']['sheet']}\" row {$r['location']['row']}: ".($r['fields']['item_name'] ?? ''));
+            }
+            continue;
+        }
+        $alt = array_filter(array_keys($s['records']), fn ($k) => ctype_digit((string) $k) && ctype_digit($key) && ltrim((string) $k, '0') === ltrim($key, '0'));
+        if ($alt) {
+            $this->info('  FOUND without leading zeros as: '.implode(', ', $alt));
+            continue;
+        }
+        $near = array_slice(array_filter(array_keys($s['records']), fn ($k) => str_contains((string) $k, ltrim($key, '0'))), 0, 5);
+        $this->warn('  NOT in this file.'.($near ? ' Similar barcodes: '.implode(', ', $near) : ''));
+    }
+
+    return 0;
+})->purpose('Explain why a barcode is or is not found');
+
 // php artisan gold:status
 Artisan::command('gold:status', function (InventoryStore $store) {
     $this->line(json_encode($store->state(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
