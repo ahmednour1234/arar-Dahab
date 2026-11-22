@@ -19,6 +19,17 @@
   const isTouch = window.matchMedia("(pointer: coarse)").matches;
 
   // ---------- helpers ----------
+  // Reliable symbologies only. Checked after decoding: ITF/Codabar give false reads on small labels.
+  // ITF (Interleaved 2 of 5) is what the shop's labels use. It has no check digit, so it is accepted only
+  // as an even-length digit string (6-14) and the live camera needs more identical reads for it.
+  function itfOk(text) { return /^\d{6,14}$/.test(text) && text.length % 2 === 0; }
+  function zxAllowed(result) {
+    const Z = window.ZXing, f = result.getBarcodeFormat();
+    if (f === Z.BarcodeFormat.ITF) return itfOk(cleanCode(result.getText()));
+    return [Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.CODE_93, Z.BarcodeFormat.EAN_13,
+            Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E, Z.BarcodeFormat.QR_CODE].includes(f);
+  }
+  function zxIsWeak(result) { return result.getBarcodeFormat() === window.ZXing.BarcodeFormat.ITF; }
   function cleanCode(s) { return String(s == null ? "" : s).replace(/[\s\u00A0\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u0640]+/g, ""); }
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -309,7 +320,7 @@
   // ---------- phone camera scanning ----------
   const cam = { stream: null, reader: null, timer: null, done: false, last: "", hits: 0 };
   // ITF / Codabar removed: they produce false reads on small jewelry labels
-  const FORMATS = ["code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"];
+  const FORMATS = ["itf", "code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"];
 
   function camFail(msg) {
     $("camError").innerHTML = msg;
@@ -317,12 +328,13 @@
     $("camHint").hidden = true;
   }
 
-  function onCameraCode(text) {
+  function onCameraCode(text, weak) {
     if (cam.done || !text) return;
     const t = cleanCode(text);
+    if (weak && !itfOk(t)) return;
     // accept only when the same value is decoded twice in a row (filters misreads)
     if (t !== cam.last) { cam.last = t; cam.hits = 1; return; }
-    if (++cam.hits < 2) return;
+    if (++cam.hits < (weak ? 3 : 2)) return;
     text = t;
     cam.done = true;
     if (navigator.vibrate) navigator.vibrate(80);
@@ -359,7 +371,7 @@
           if (cam.done || !cam.stream) return;
           try {
             const codes = await native.detect(video);
-            if (codes && codes.length) return onCameraCode(codes[0].rawValue);
+            if (codes && codes.length) { const c0 = codes[0]; onCameraCode(c0.rawValue, c0.format === "itf"); if (cam.done) return; }
           } catch (_) {}
           cam.timer = setTimeout(tick, 120);
         };
@@ -370,17 +382,9 @@
         const Z = window.ZXing;
         const hints = new Map();
         hints.set(Z.DecodeHintType.TRY_HARDER, true);
-        hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,
-          [Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.CODE_93, Z.BarcodeFormat.EAN_13,
-           Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E, Z.BarcodeFormat.QR_CODE]);
         const mf = new Z.MultiFormatReader();
         mf.setHints(hints);
-        const decodeCanvas = (cv) => {
-          try {
-            const bmp = new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cv)));
-            return mf.decodeWithState(bmp).getText();
-          } catch (_) { return null; } finally { try { mf.reset(); } catch (_) {} }
-        };
+        const decodeCanvas = zxDecode;
         cam.stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, focusMode: { ideal: "continuous" } }, audio: false });
         video.srcObject = cam.stream;
@@ -389,7 +393,21 @@
           if (cam.done || !cam.stream) return;
           const vw = video.videoWidth, vh = video.videoHeight;
           if (vw && vh) {
-            // the area inside the gold frame first, then the whole frame
+            // 1) white labels in the frame -> bars inside each label (backgrounds like wood grain look like bars)
+            const base = toCanvas(video, 0, 0, vw, vh, 960), kk = vw / base.width;
+            for (const r of findLabelRegions(base).slice(0, 4)) {
+              const rx = r.x * kk, ry = r.y * kk, rw = r.w * kk, rh = r.h * kk;
+              const nat = toCanvas(video, rx, ry, rw, rh, 1200, 400);
+              const bars = findBars(nat);
+              if (!bars) continue;
+              const k2 = rw / nat.width;
+              const bx = Math.round(rx + bars.x * k2), by = Math.round(ry + bars.y * k2), bw = Math.round(bars.w * k2), bh = Math.round(bars.h * k2);
+              for (const minSide of [640, 480, 900]) {
+                const res = decodeCanvas(padCanvas(toCanvas(video, bx, by, bw, bh, 1280, minSide)));
+                if (res) { onCameraCode(res.text, res.weak); if (cam.done) return; break; }
+              }
+            }
+            // 2) the area inside the gold frame, then the whole frame
             const areas = [[vw * 0.05, vh * 0.2, vw * 0.9, vh * 0.6], [0, 0, vw, vh]];
             for (const [ax, ay, aw, ah] of areas) {
               const base = toCanvas(video, ax, ay, aw, ah, 1280);
@@ -397,10 +415,14 @@
               let text = null;
               if (bars) {
                 const k = aw / base.width;
-                text = decodeCanvas(toCanvas(video, ax + bars.x * k, ay + bars.y * k, bars.w * k, bars.h * k, 1280, 640));
+                const bx = Math.round(ax + bars.x * k), by = Math.round(ay + bars.y * k), bw = Math.round(bars.w * k), bh = Math.round(bars.h * k);
+                for (const minSide of [640, 480, 900]) {
+                  text = decodeCanvas(padCanvas(toCanvas(video, bx, by, bw, bh, 1280, minSide)));
+                  if (text) break;
+                }
               }
               if (!text) text = decodeCanvas(base);
-              if (text) { onCameraCode(text); if (cam.done) return; break; }
+              if (text) { onCameraCode(text.text, text.weak); if (cam.done) return; break; }
             }
           }
           cam.timer = setTimeout(tick, 150);
@@ -482,7 +504,7 @@
   });
 
   // ---------- scan barcodes from a photo (camera shot or gallery) ----------
-  const IMG_FORMATS = ["code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"];
+  const IMG_FORMATS = FORMATS;
   function loadImage(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
@@ -502,6 +524,16 @@
     g.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
     return c;
   }
+  // add a white margin (quiet zone) around a crop: decoders need it
+  function padCanvas(cv) {
+    const px = Math.round(cv.width * 0.15), py = Math.round(cv.height * 0.3);
+    const c = document.createElement("canvas");
+    c.width = cv.width + 2 * px; c.height = cv.height + 2 * py;
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(cv, px, py);
+    return c;
+  }
   // grayscale + contrast stretch: helps on dim / low-contrast photos
   function enhance(canvas) {
     const g = canvas.getContext("2d");
@@ -518,14 +550,19 @@
   }
   // Find bright, low-saturation areas (labels / paper) and return their boxes in image coordinates.
   function findLabelRegions(img) {
-    const W = img.naturalWidth, H = img.naturalHeight;
+    const W = img.naturalWidth || img.videoWidth || img.width, H = img.naturalHeight || img.videoHeight || img.height;
     const s = Math.min(1, 700 / Math.max(W, H));
     const c = toCanvas(img, 0, 0, W, H, 700);
     const w = c.width, h = c.height, a = c.getContext("2d").getImageData(0, 0, w, h).data;
+    // "label-like" = bright and only lightly coloured. Thresholds adapt to the photo (white balance may tint labels blue/yellow).
+    const bright = new Uint8Array(w * h);
+    for (let i = 0, j = 0; j < w * h; i += 4, j++) bright[j] = Math.max(a[i], a[i + 1], a[i + 2]);
+    const srt = Uint8Array.from(bright).sort();
+    const minBright = Math.max(140, Math.min(200, srt[Math.floor(srt.length * 0.7)]));
     const mask = new Uint8Array(w * h);
     for (let i = 0, j = 0; j < w * h; i += 4, j++) {
-      const r = a[i], g2 = a[i + 1], b = a[i + 2], mx = Math.max(r, g2, b), mn = Math.min(r, g2, b);
-      mask[j] = mx > 170 && mx - mn < 45 ? 1 : 0;
+      const mx = bright[j], mn = Math.min(a[i], a[i + 1], a[i + 2]);
+      mask[j] = mx >= minBright && (mx - mn) / mx < 0.3 ? 1 : 0;
     }
     const seen = new Uint8Array(w * h), boxes = [], stack = [];
     for (let j = 0; j < w * h; j++) {
@@ -555,7 +592,11 @@
     const lum = new Float32Array(w * h);
     for (let i = 0, j = 0; j < w * h; i += 4, j++) lum[j] = (a[i] * 299 + a[i + 1] * 587 + a[i + 2] * 114) / 1000;
     const rowCount = new Int32Array(h), colHits = new Int32Array(w);
-    const edge = (y, x) => Math.abs(lum[y * w + x + 1] - lum[y * w + x - 1]) > 40;
+    // threshold adapts to the image contrast (small / soft photos have weak edges)
+    const sorted = Float32Array.from(lum).sort();
+    const range = sorted[Math.floor(sorted.length * 0.97)] - sorted[Math.floor(sorted.length * 0.03)];
+    const thr = Math.max(14, range * 0.28), st = w < 500 ? 1 : 2;
+    const edge = (y, x) => Math.abs(lum[y * w + Math.min(w - 1, x + st - 1) + (st === 1 ? 1 : 0)] - lum[y * w + x - 1]) > thr;
     for (let y = 0; y < h; y++) {
       let n = 0, prev = false;
       for (let x = 1; x < w - 1; x++) { const e = edge(y, x); if (e && !prev) n++; prev = e; }
@@ -597,9 +638,23 @@
     const padX = bw * 0.08, padY = bh * 0.15;
     return { x: Math.max(0, x0 - padX), y: Math.max(0, y0 - padY), w: Math.min(w, bw + 2 * padX), h: Math.min(h, bh + 2 * padY) };
   }
-  async function decodeWithZXing(canvas, reader) {
-    try { const r = await reader.decodeFromImageUrl(canvas.toDataURL("image/png")); return r ? [r.getText()] : []; }
-    catch (_) { return []; }
+  // Direct decode of a canvas (Hybrid, then Global binarizer). A fresh reader per attempt:
+  // reusing one MultiFormatReader across many failed attempts made later decodes fail.
+  function zxDecode(canvas) {
+    const Z = window.ZXing;
+    for (const Bin of [Z.HybridBinarizer, Z.GlobalHistogramBinarizer]) {
+      try {
+        const mf = new Z.MultiFormatReader();
+        const h = new Map(); h.set(Z.DecodeHintType.TRY_HARDER, true); mf.setHints(h);
+        const r = mf.decodeWithState(new Z.BinaryBitmap(new Bin(new Z.HTMLCanvasElementLuminanceSource(canvas))));
+        if (r && zxAllowed(r)) return { text: r.getText(), weak: zxIsWeak(r) };
+      } catch (_) {}
+    }
+    return null;
+  }
+  async function decodeWithZXing(canvas) {
+    const t = zxDecode(canvas);
+    return t ? [t.text] : [];
   }
   // Returns every distinct barcode found in the image.
   async function decodeImage(file) {
@@ -619,13 +674,11 @@
       if (window.ZXing) {
         const hints = new Map();
         hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
-        const BF = window.ZXing.BarcodeFormat;
-        hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS,
-          [BF.CODE_128, BF.CODE_39, BF.CODE_93, BF.EAN_13, BF.EAN_8, BF.UPC_A, BF.UPC_E, BF.QR_CODE]);
-        reader = new window.ZXing.BrowserMultiFormatReader(hints);
+        reader = new window.ZXing.MultiFormatReader();
+        reader.setHints(hints);
       }
       const tryCanvas = async (cv) => {
-        if (det) { try { (await det.detect(cv)).forEach((c) => add(c.rawValue)); } catch (_) {} }
+        if (det) { try { (await det.detect(cv)).forEach((c) => { if (c.format !== "itf" || itfOk(cleanCode(c.rawValue))) add(c.rawValue); }); } catch (_) {} }
         if (reader) (await decodeWithZXing(cv, reader)).forEach(add);
       };
       // 1) whole picture (native detector can find several codes at once)
@@ -634,13 +687,19 @@
       for (const r of regions) {
         const before = found.size;
         const rc = toCanvas(img, r.x, r.y, r.w, r.h, 1600, 900);
-        const nat = toCanvas(img, r.x, r.y, r.w, r.h, 1200);
+        const nat = toCanvas(img, r.x, r.y, r.w, r.h, 1200, 400);
         const bars = findBars(nat);
         if (bars) {
           const k = r.w / nat.width;  // canvas -> image scale
-          const bx = r.x + bars.x * k, by = r.y + bars.y * k, bw = bars.w * k, bh = bars.h * k;
-          await tryCanvas(toCanvas(img, bx, by, bw, bh, 1600, 700));
-          if (found.size === before) await tryCanvas(enhance(toCanvas(img, bx, by, bw, bh, 1600, 900)));
+          const bx = Math.round(r.x + bars.x * k), by = Math.round(r.y + bars.y * k);
+          const bw = Math.round(bars.w * k), bh = Math.round(bars.h * k);
+          // small barcodes (≈1px per bar) are sensitive to the enlarge factor: try several
+          for (const minSide of [700, 520, 900, 1100]) {
+            await tryCanvas(padCanvas(toCanvas(img, bx, by, bw, bh, 1600, minSide)));
+            if (found.size > before) break;
+            await tryCanvas(padCanvas(enhance(toCanvas(img, bx, by, bw, bh, 1600, minSide))));
+            if (found.size > before) break;
+          }
         }
         if (found.size === before) await tryCanvas(rc);
         if (found.size === before) await tryCanvas(enhance(toCanvas(img, r.x, r.y, r.w, r.h, 1600, 1200)));
