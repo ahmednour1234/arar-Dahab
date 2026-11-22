@@ -20,6 +20,9 @@
     </div>
     <div class="top-actions">
     <a class="icon-btn help-link" href="{{ url('/help') }}" title="شرح الاستخدام" aria-label="شرح الاستخدام">؟</a>
+    <button type="button" class="icon-btn" id="displayOpen" title="شاشة العرض" aria-label="شاشة العرض">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
     <button type="button" class="icon-btn" id="listOpen" title="كل الباركودات" aria-label="كل الباركودات">
       <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
@@ -84,10 +87,38 @@
       </form>
       <p class="error" id="scanError" hidden></p>
 
+      <div class="live-box">
+        <label class="live-toggle"><input type="checkbox" id="liveSend"> <span>إظهار نتيجة المسح على شاشة الكمبيوتر</span></label>
+        <div class="live-fields" id="liveFields">
+          <label>القناة <input id="liveChannel" type="text" maxlength="40" dir="auto" placeholder="main"></label>
+          <label>اسم الجهاز <input id="liveDevice" type="text" maxlength="40" dir="auto" placeholder="ماسح 1"></label>
+        </div>
+      </div>
+
       <aside class="demo" id="demoPanel" hidden>
         <div class="demo-head"><span class="tag">للتجربة فقط</span> باركودات تجريبية</div>
         <div class="chips" id="demoChips"></div>
       </aside>
+    </section>
+
+    <!-- Live display (laptop) -->
+    <section class="view display" id="viewDisplay" hidden>
+      <div class="display-head">
+        <div>
+          <h2>شاشة العرض</h2>
+          <div class="muted small" id="displayStatus">في انتظار المسح…</div>
+        </div>
+        <label class="display-ch">القناة <input id="displayChannel" type="text" maxlength="40" dir="auto"></label>
+      </div>
+      <div id="displayBody" class="display-body">
+        <div class="display-wait">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M6 18V8h10M48 8h10v10M58 46v10H48M16 56H6V46" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><g fill="currentColor" opacity=".9"><rect x="15" y="18" width="3" height="28"/><rect x="21" y="18" width="1.6" height="28"/><rect x="25" y="18" width="4" height="28"/><rect x="32" y="18" width="1.6" height="28"/><rect x="36" y="18" width="3" height="28"/><rect x="42" y="18" width="1.6" height="28"/><rect x="46" y="18" width="3" height="28"/></g></svg>
+          <p>امسح قطعة من جهاز Honeywell — النتيجة هتظهر هنا تلقائياً</p>
+        </div>
+      </div>
+      <h3 class="display-hist-title">آخر عمليات المسح</h3>
+      <div id="displayHistory" class="list"></div>
+      <button class="btn outline big" type="button" id="displayClose" style="margin-top:14px">رجوع للماسح</button>
     </section>
 
     <!-- All barcodes -->

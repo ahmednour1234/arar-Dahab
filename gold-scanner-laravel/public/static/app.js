@@ -58,8 +58,10 @@
   }
 
   function show(view) {
-    ["viewKey", "viewScan", "viewList", "viewCamera", "viewUpload", "viewLoading", "viewResult"].forEach((v) => ($(v).hidden = v !== view));
+    ["viewKey", "viewScan", "viewList", "viewDisplay", "viewCamera", "viewUpload", "viewLoading", "viewResult"].forEach((v) => ($(v).hidden = v !== view));
     if (state.view === "viewCamera" && view !== "viewCamera") stopCamera();
+    if (state.view === "viewDisplay" && view !== "viewDisplay") stopDisplay();
+    document.body.classList.toggle("is-display", view === "viewDisplay");
     state.view = view;
     if (view === "viewScan") focusInput();
   }
@@ -170,7 +172,10 @@
     show("viewLoading");
     try {
       const fid = $("scanFilter").value;
-      const r = await api("/api/item/" + encodeURIComponent(code) + (fid ? "?file=" + encodeURIComponent(fid) : ""));
+      const qs = [];
+      if (fid) qs.push("file=" + encodeURIComponent(fid));
+      if (live.send) qs.push("live=" + encodeURIComponent(live.channel || "main") + "&device=" + encodeURIComponent(live.device || ""));
+      const r = await api("/api/item/" + encodeURIComponent(code) + (qs.length ? "?" + qs.join("&") : ""));
       state.online = true;
       if (r.status === 401) { askKey(true); return; }
       renderResult(r.status, r.body || {}, code);
@@ -200,7 +205,7 @@
     return "";
   }
 
-  function renderResult(status, body, code) {
+  function buildResultHtml(status, body, code) {
     let html = "";
     if (status === 200 && body.item) {
       const f = body.item.fields, L = body.item.labels || {};
@@ -253,7 +258,11 @@
     } else {
       html = '<div class="msg dup">' + ICON_WARN + "<h2>حدث خطأ</h2><p>" + esc((body && body.detail) || "خطأ غير متوقع") + "</p></div>";
     }
-    $("resultBody").innerHTML = html;
+    return html;
+  }
+
+  function renderResult(status, body, code) {
+    $("resultBody").innerHTML = buildResultHtml(status, body, code);
     show("viewResult");
     window.scrollTo(0, 0);
     $("newScanBtn").focus({ preventScroll: true });
@@ -583,6 +592,117 @@
     copyText(tsv, "تم نسخ " + rows.length + " صف — الصقه في Excel");
   });
 
+  // ---------- live display: scanner -> laptop ----------
+  const LIVE_STORE = "goldScanner.live";
+  const live = (() => {
+    let v = {};
+    try { v = JSON.parse(load(LIVE_STORE) || "{}"); } catch (_) {}
+    return { send: v.send !== false, channel: v.channel || "main", device: v.device || "" };
+  })();
+  function saveLive() { store(LIVE_STORE, JSON.stringify(live)); }
+  function syncLiveUi() {
+    $("liveSend").checked = live.send;
+    $("liveFields").hidden = !live.send;
+    $("liveChannel").value = live.channel;
+    $("liveDevice").value = live.device;
+  }
+  syncLiveUi();
+  $("liveSend").addEventListener("change", () => { live.send = $("liveSend").checked; saveLive(); syncLiveUi(); focusInput(); });
+  $("liveChannel").addEventListener("change", () => { live.channel = $("liveChannel").value.trim() || "main"; saveLive(); syncLiveUi(); focusInput(); });
+  $("liveDevice").addEventListener("change", () => { live.device = $("liveDevice").value.trim(); saveLive(); focusInput(); });
+
+  const disp = { channel: "main", after: 0, timer: null, busy: false, wake: null, history: [] };
+  function beep(ok) {
+    try {
+      const ctx = disp.audio || (disp.audio = new (window.AudioContext || window.webkitAudioContext)());
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = ok ? 880 : 300; g.gain.value = 0.08;
+      o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + (ok ? 0.12 : 0.3));
+    } catch (_) {}
+  }
+  function eventLabel(ev) {
+    const b = ev.body || {};
+    if (ev.status === 200 && b.item) return esc(b.item.fields.item_name || "—");
+    if (ev.status === 404) return "غير موجودة";
+    if (ev.status === 409) return "باركود مكرر";
+    return "خطأ";
+  }
+  function showEvent(ev, isNew) {
+    const when = new Date(ev.ts);
+    $("displayBody").innerHTML =
+      '<div class="display-meta"><span>' + (ev.device ? "من: " + esc(ev.device) : "") + "</span><span>" +
+      esc(isNaN(when) ? "" : when.toLocaleTimeString("ar-SA-u-nu-latn")) + "</span></div>" +
+      buildResultHtml(ev.status, ev.body || {}, ev.barcode);
+    if (isNew) {
+      const card = $("displayBody").querySelector(".item-hero, .msg");
+      if (card) { card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash"); }
+      beep(ev.status === 200);
+    }
+    $("displayStatus").textContent = "آخر مسح: " + (isNaN(when) ? "" : when.toLocaleTimeString("ar-SA-u-nu-latn"));
+  }
+  function renderHistory() {
+    $("displayHistory").innerHTML = disp.history.slice().reverse().slice(0, 10).map((ev, i) =>
+      '<div class="li' + (ev.status === 409 ? " dup" : "") + '" data-ev="' + ev.id + '"><div class="main">' +
+      '<div class="bc">' + esc(ev.barcode) + "</div><div class=\"nm\">" + eventLabel(ev) + "</div>" +
+      '<div class="meta">' + [ev.device && esc(ev.device), esc(new Date(ev.ts).toLocaleTimeString("ar-SA-u-nu-latn"))].filter(Boolean).join(" • ") +
+      "</div></div></div>").join("");
+  }
+  async function pollDisplay(first) {
+    if (disp.busy) return;
+    disp.busy = true;
+    try {
+      const r = await api("/api/live?channel=" + encodeURIComponent(disp.channel) + "&after=" + disp.after, { timeout: 6000 });
+      if (r.status === 401) { askKey(true); return; }
+      if (r.status === 200) {
+        state.online = true;
+        const evs = r.body.events || [];
+        if (r.body.last_id < disp.after) disp.after = 0;          // feed was reset
+        if (evs.length) {
+          disp.history = disp.history.concat(evs).slice(-30);
+          showEvent(evs[evs.length - 1], !first);
+          renderHistory();
+        }
+        disp.after = Math.max(disp.after, r.body.last_id || 0);
+      }
+    } catch (_) {
+      state.online = false; renderStatus();
+    } finally {
+      disp.busy = false;
+    }
+  }
+  async function openDisplay(channel) {
+    disp.channel = (channel || live.channel || "main").trim() || "main";
+    disp.after = 0; disp.history = [];
+    $("displayChannel").value = disp.channel;
+    $("displayHistory").innerHTML = "";
+    show("viewDisplay");
+    history.replaceState(null, "", location.pathname + "?display=" + encodeURIComponent(disp.channel));
+    await pollDisplay(true);
+    clearInterval(disp.timer);
+    disp.timer = setInterval(() => pollDisplay(false), 1000);
+    try { if (navigator.wakeLock) disp.wake = await navigator.wakeLock.request("screen"); } catch (_) {}
+  }
+  function stopDisplay() {
+    clearInterval(disp.timer); disp.timer = null;
+    try { if (disp.wake) disp.wake.release(); } catch (_) {}
+    disp.wake = null;
+    history.replaceState(null, "", location.pathname);
+  }
+  $("displayOpen").addEventListener("click", () => openDisplay(live.channel));
+  $("displayClose").addEventListener("click", () => show("viewScan"));
+  $("displayChannel").addEventListener("change", () => openDisplay($("displayChannel").value));
+  $("displayHistory").addEventListener("click", (e) => {
+    const row = e.target.closest("[data-ev]");
+    if (!row) return;
+    const ev = disp.history.find((x) => String(x.id) === row.dataset.ev);
+    if (ev) showEvent(ev, false);
+  });
+  document.addEventListener("visibilitychange", async () => {
+    if (!document.hidden && state.view === "viewDisplay" && navigator.wakeLock && !disp.wake) {
+      try { disp.wake = await navigator.wakeLock.request("screen"); } catch (_) {}
+    }
+  });
+
   // ---------- demo panel ----------
   async function loadDemo() {
     if (!state.cfg.demo_mode) { $("demoPanel").hidden = true; return; }
@@ -611,9 +731,11 @@
     clearInterval(pollTimer);
     pollTimer = setInterval(pollHealth, Math.max(2, state.cfg.poll_interval_seconds || 3) * 1000);
     if (initialQuery) { search(initialQuery); initialQuery = ""; }
+    if (initialDisplay !== null) { openDisplay(initialDisplay || live.channel); initialDisplay = null; }
   }
   // Optional ?q=BARCODE opens a lookup directly (handy for testing/bookmarks).
   let initialQuery = new URLSearchParams(location.search).get("q") || "";
+  let initialDisplay = new URLSearchParams(location.search).get("display");
 
   async function boot() {
     // Access key can be provided once via ?key=... (e.g. a bookmark on the scanner), then stored locally.

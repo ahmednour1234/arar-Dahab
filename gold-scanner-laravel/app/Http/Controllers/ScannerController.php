@@ -5,13 +5,14 @@ namespace App\Http\Controllers;
 use App\Services\InventoryParser;
 use App\Services\InventoryReadException;
 use App\Services\InventoryStore;
+use App\Services\LiveFeed;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class ScannerController extends Controller
 {
-    public function __construct(private InventoryStore $store)
+    public function __construct(private InventoryStore $store, private LiveFeed $live)
     {
     }
 
@@ -62,6 +63,30 @@ class ScannerController extends Controller
     }
 
     public function item(Request $request, string $barcode): JsonResponse
+    {
+        $response = $this->lookup($request, $barcode);
+        $channel = (string) $request->query('live', '');
+        if ($channel !== '' && $response->getStatusCode() !== 400) {
+            $this->live->push(LiveFeed::cleanChannel($channel), [
+                'device' => mb_substr(trim((string) $request->query('device', '')), 0, 40),
+                'barcode' => trim($barcode),
+                'status' => $response->getStatusCode(),
+                'body' => $response->getData(true),
+            ]);
+        }
+
+        return $response;
+    }
+
+    /** Long-poll-free live feed: events newer than ?after=<id> for ?channel=. */
+    public function live(Request $request): JsonResponse
+    {
+        $channel = LiveFeed::cleanChannel((string) $request->query('channel', 'main'));
+
+        return response()->json(['channel' => $channel] + $this->live->since($channel, max(0, (int) $request->query('after', 0))));
+    }
+
+    private function lookup(Request $request, string $barcode): JsonResponse
     {
         if (! InventoryParser::validBarcode($barcode)) {
             return response()->json(['detail' => 'صيغة الباركود غير صالحة'], 400);

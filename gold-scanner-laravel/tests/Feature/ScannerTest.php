@@ -230,6 +230,26 @@ class ScannerTest extends TestCase
             ['CONTENT_TYPE' => 'application/octet-stream', 'HTTP_X_FILENAME' => 'n.csv'], $csv)->assertStatus(401);
     }
 
+    public function test_live_display_feed(): void
+    {
+        $this->app->singleton(\App\Services\LiveFeed::class, fn () => new \App\Services\LiveFeed($this->dir.'/live'));
+        $this->getJson('/api/live?channel=counter1', $this->h)->assertOk()->assertJsonPath('last_id', 0);
+        // scanner lookups published to channel counter1
+        $this->getJson('/api/item/00123456?live=counter1&device='.rawurlencode('ماسح 1'), $this->h)->assertOk();
+        $this->getJson('/api/item/999999?live=counter1', $this->h)->assertStatus(404);
+        $this->getJson('/api/item/00123456', $this->h)->assertOk();                 // no live param -> not published
+        $this->getJson('/api/item/'.rawurlencode('<x>').'?live=counter1', $this->h)->assertStatus(400); // invalid -> not published
+        $feed = $this->getJson('/api/live?channel=counter1', $this->h)->assertOk()->json();
+        $this->assertSame(2, $feed['last_id']);
+        $this->assertSame('ماسح 1', $feed['events'][0]['device']);
+        $this->assertSame('00123456', $feed['events'][0]['body']['item']['fields']['barcode']);
+        $this->assertSame(404, $feed['events'][1]['status']);
+        // only newer events, and channels are separate
+        $this->assertCount(1, $this->getJson('/api/live?channel=counter1&after=1', $this->h)->json('events'));
+        $this->assertSame(0, $this->getJson('/api/live?channel=other', $this->h)->json('last_id'));
+        $this->getJson('/api/live?channel=counter1')->assertStatus(401);           // access key required
+    }
+
     public function test_csv_upload(): void
     {
         $csv = "Barcode,Item Name,Price\nCSV-1,قطعة من CSV,99\n";

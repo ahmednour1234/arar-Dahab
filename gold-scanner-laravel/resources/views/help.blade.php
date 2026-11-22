@@ -52,6 +52,7 @@
       <a href="#start">البداية</a>
       <a href="#scan">المسح والبحث</a>
       <a href="#honeywell">جهاز Honeywell</a>
+      <a href="#display">النتيجة على اللابتوب</a>
       <a href="#camera">كاميرا الجوال</a>
       <a href="#list">كل الباركودات والنسخ</a>
       <a href="#upload">رفع ملفات Excel</a>
@@ -74,6 +75,7 @@
         <tr><th>الزر</th><th>وظيفته</th></tr>
         <tr><td><span class="icon-inline"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></td><td>عرض كل الباركودات من كل الملفات، مع البحث والنسخ</td></tr>
         <tr><td><span class="icon-inline"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0-5 5m5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td><td>رفع ملفات Excel وإدارتها</td></tr>
+        <tr><td><span class="icon-inline"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span></td><td>شاشة العرض: بتعرض على اللابتوب نتيجة المسح اللي بيتعمل من جهاز Honeywell</td></tr>
         <tr><td><span class="icon-inline">؟</span></td><td>صفحة الشرح دي</td></tr>
         <tr><td>● متصل</td><td>حالة الاتصال: <span style="color:var(--ok)">أخضر</span> = تمام، <span style="color:var(--warn)">برتقالي</span> = البيانات ممكن تكون قديمة، <span style="color:var(--err)">أحمر</span> = مفيش اتصال</td></tr>
       </table></div>
@@ -120,6 +122,27 @@
         <tr><td>Scan to Intent</td><td>Off (مقفول)</td></tr>
       </table></div>
       <div class="tip">أسماء القوايم ممكن تختلف شوية حسب الموديل (CT40 / CT60 / EDA51 / EDA52) وإصدار أندرويد. لو الماسح بيكتب الرقم من غير ما يبدأ البحث، يبقى الـ Suffix مش Enter.</div>
+    </section>
+
+    <section class="card" id="display">
+      <h2><span class="n">★</span>إظهار نتيجة المسح على اللابتوب</h2>
+      <p>تقدر تمسح القطعة بجهاز Honeywell، والنتيجة تظهر بخط كبير على شاشة اللابتوب أو الكمبيوتر اللي على الكاونتر، عشان العميل أو الموظف يشوفها.</p>
+      <h3>على اللابتوب</h3>
+      <ol>
+        <li>افتح الموقع واضغط زرار <b>شاشة العرض</b> 🖥 في أعلى الشاشة.</li>
+        <li>اكتب اسم <b>القناة</b> (مثلاً <code>counter1</code>)، أو سيبها <code>main</code>.</li>
+        <li>سيب الصفحة مفتوحة. بتتحدث لوحدها كل ثانية، وبتطلع صوت صغير مع كل مسح، والشاشة مش بتطفي وهي مفتوحة.</li>
+        <li>ممكن تحفظ الرابط ده كـ Bookmark عشان تفتح الشاشة على طول: <code>{{ url('/') }}/?display=counter1</code></li>
+      </ol>
+      <h3>على جهاز Honeywell</h3>
+      <ol>
+        <li>تحت أزرار المسح، علّم على <b>إظهار نتيجة المسح على شاشة الكمبيوتر</b>. الاختيار ده بيكون متعلّم من الأول.</li>
+        <li>اكتب <b>نفس اسم القناة</b> اللي على اللابتوب.</li>
+        <li>اكتب <b>اسم الجهاز</b> (مثلاً "ماسح 1")، عشان اللابتوب يعرض المسح جاي من أنهي جهاز.</li>
+        <li>امسح عادي. النتيجة بتظهر على الماسح وعلى اللابتوب في نفس الوقت.</li>
+      </ol>
+      <div class="tip">لو عندك أكتر من كاونتر، اعمل لكل كاونتر قناة باسم مختلف (<code>counter1</code>، <code>counter2</code>…). كل لابتوب هيعرض المسح اللي جاي من الماسح بتاعه بس.</div>
+      <p>تحت النتيجة الكبيرة فيه قائمة <b>آخر عمليات المسح</b>. لو ضغطت على أي واحدة، تفاصيلها بتظهر تاني.</p>
     </section>
 
     <section class="card" id="camera">
