@@ -28,7 +28,8 @@ class ScannerTest extends TestCase
             'goldscanner.upload_enabled' => true,
             'goldscanner.allowed_networks' => [],
         ]);
-        copy(database_path('demo/inventory.xls'), $this->dir.'/inventory.xls');
+        mkdir($this->dir.'/files');
+        copy(database_path('demo/inventory.xls'), $this->dir.'/files/inventory.xls');
         $this->app->singleton(InventoryStore::class, fn () => new InventoryStore(config('goldscanner'), $this->dir));
     }
 
@@ -61,7 +62,7 @@ class ScannerTest extends TestCase
     public function test_parses_demo_file_with_leading_zeros_numeric_and_duplicates(): void
     {
         $p = new InventoryParser(config('goldscanner'));
-        $s = $p->parseFile($this->dir.'/inventory.xls');
+        $s = $p->parseFile($this->dir.'/files/inventory.xls');
         $this->assertGreaterThanOrEqual(30, $s['total_rows']);
         $this->assertSame('00123456', $s['records']['00123456'][0]['fields']['barcode']);
         $this->assertArrayNotHasKey('123456', $s['records']);
@@ -122,7 +123,7 @@ class ScannerTest extends TestCase
 
     public function test_503_when_never_loaded(): void
     {
-        unlink($this->dir.'/inventory.xls');
+        unlink($this->dir.'/files/inventory.xls');
         $this->getJson('/api/item/123', $this->h)->assertStatus(503);
         $this->assertSame('loading', $this->getJson('/api/health', $this->h)->json('excel.state'));
     }
@@ -131,14 +132,14 @@ class ScannerTest extends TestCase
     {
         $this->getJson('/api/item/00123456', $this->h)->assertOk();
         // replace via SFTP/FTP: new content
-        $this->makeXls($this->dir.'/inventory.xls', [['NEW-1', 'جديد', 21, 1, 99]]);
-        touch($this->dir.'/inventory.xls', time() + 5);
+        $this->makeXls($this->dir.'/files/inventory.xls', [['NEW-1', 'جديد', 21, 1, 99]]);
+        touch($this->dir.'/files/inventory.xls', time() + 5);
         $this->app->forgetInstance(InventoryStore::class);
         $this->getJson('/api/item/NEW-1', $this->h)->assertOk()->assertJsonPath('item.fields.price', '99');
         $this->getJson('/api/item/00123456', $this->h)->assertStatus(404);
         // broken file -> stale, previous snapshot still served
-        file_put_contents($this->dir.'/inventory.xls', 'garbage');
-        touch($this->dir.'/inventory.xls', time() + 10);
+        file_put_contents($this->dir.'/files/inventory.xls', 'garbage');
+        touch($this->dir.'/files/inventory.xls', time() + 10);
         $this->app->forgetInstance(InventoryStore::class);
         $r = $this->getJson('/api/item/NEW-1', $this->h)->assertOk();
         $this->assertSame('stale', $r->json('data_state'));
@@ -158,14 +159,58 @@ class ScannerTest extends TestCase
         $this->assertCount(1, glob($this->dir.'/backups/*.xls'));
     }
 
+    public function test_multiple_files_filter_list_and_delete(): void
+    {
+        $this->makeXls($f = $this->dir.'/b.xlsx', [['BR-1', 'فرع ٢', 21, 2, 500], ['DUP-5555', 'نسخة فرع', 21, 3, 1]], 'xlsx');
+        $r = $this->call('POST', '/api/admin/upload', [], [], [],
+            $this->server(['X-Admin-Key' => 'adm', 'X-Filename' => rawurlencode('فرع المساعدية.xlsx')]), file_get_contents($f));
+        $r->assertOk()->assertJsonPath('file.name', 'فرع المساعدية.xlsx')->assertJsonPath('file.replaced', false);
+
+        $files = $this->getJson('/api/files', $this->h)->assertOk()->json('files');
+        $this->assertCount(2, $files);
+        $branch = collect($files)->firstWhere('name', 'فرع المساعدية.xlsx');
+        $main = collect($files)->firstWhere('name', 'inventory.xls');
+
+        // search across all files
+        $this->getJson('/api/item/BR-1', $this->h)->assertOk()->assertJsonPath('item.location.file', 'فرع المساعدية.xlsx');
+        $this->getJson('/api/item/00123456', $this->h)->assertOk();
+        // DUP-5555 is duplicated in both files (and inside the main file) -> 409 with file names
+        $dup = $this->getJson('/api/item/DUP-5555', $this->h)->assertStatus(409);
+        $this->assertSame(3, $dup->json('count'));
+        $this->assertContains('فرع المساعدية.xlsx', array_column($dup->json('locations'), 'file'));
+        // filter: only the branch file
+        $this->getJson('/api/item/DUP-5555?file='.$branch['id'], $this->h)->assertOk();
+        $this->getJson('/api/item/00123456?file='.$branch['id'], $this->h)->assertStatus(404);
+
+        // list all items, search and filter
+        $all = $this->getJson('/api/items', $this->h)->assertOk()->json();
+        $this->assertSame(38, $all['total']);
+        $this->assertSame(2, $this->getJson('/api/items?file='.$branch['id'], $this->h)->json('total'));
+        $this->assertSame(1, $this->getJson('/api/items?q=br-1', $this->h)->json('total'));
+        $page = $this->getJson('/api/items?per_page=10&page=2', $this->h)->json();
+        $this->assertCount(10, $page['items']);
+        $this->assertSame(4, $page['pages']);
+
+        // health counts both files
+        $this->assertSame(2, $this->getJson('/api/health', $this->h)->json('excel.files'));
+
+        // delete (admin only)
+        $this->deleteJson('/api/admin/files/'.$branch['id'], [], $this->h + ['X-Admin-Key' => 'x'])->assertStatus(401);
+        $this->deleteJson('/api/admin/files/'.$branch['id'], [], $this->h + ['X-Admin-Key' => 'adm'])->assertOk();
+        $this->getJson('/api/item/BR-1', $this->h)->assertStatus(404);
+        $this->assertCount(1, $this->getJson('/api/files', $this->h)->json('files'));
+        $this->assertNotEmpty(glob($this->dir.'/backups/*.xlsx'));   // deleted file kept as backup
+        $this->assertSame($main['id'], $this->getJson('/api/files', $this->h)->json('files.0.id'));
+    }
+
     public function test_upload_rejections_keep_current_file(): void
     {
-        $before = file_get_contents($this->dir.'/inventory.xls');
+        $before = file_get_contents($this->dir.'/files/inventory.xls');
         $post = fn ($body, $admin = 'adm') => $this->call('POST', '/api/admin/upload', [], [], [], $this->server(['X-Admin-Key' => $admin]), $body);
         $post($before, 'wrong')->assertStatus(401);
         $post('not excel')->assertStatus(400);
         $post(substr($before, 0, intdiv(strlen($before), 2)))->assertStatus(400);
-        $this->assertSame($before, file_get_contents($this->dir.'/inventory.xls'));
+        $this->assertSame($before, file_get_contents($this->dir.'/files/inventory.xls'));
         config(['goldscanner.upload_enabled' => false]);
         $post($before)->assertStatus(404);
     }

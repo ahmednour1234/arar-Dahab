@@ -10,7 +10,7 @@ Artisan::command('gold:demo {--force}', function (InventoryStore $store) {
 
         return 1;
     }
-    $snap = $store->replaceWithUpload(database_path('demo/inventory.xls'), 'xls');
+    $snap = $store->addUpload(database_path('demo/inventory.xls'), 'xls', 'inventory-demo.xls');
     $this->info("Demo inventory installed: {$snap['total_rows']} rows (fictional data).");
 
     return 0;

@@ -1,0 +1,10 @@
+{
+  "server_url": "https://dahab.hoorr.store",
+  "access_key": "change-me-1234",
+  "admin_key": "admin-change-me-5678",
+  "paths": [
+    "C:\\GoldScanner\\Excel",
+    "C:\\Users\\Public\\Documents\\inventory.xls"
+  ],
+  "poll_seconds": 5
+}

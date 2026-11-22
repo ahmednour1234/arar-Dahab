@@ -175,3 +175,42 @@ input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(212,175,55,.
 .up-ok, .up-err { margin-top: 12px; padding: 12px; border-radius: 10px; line-height: 1.6; font-size: .92rem; }
 .up-ok { background: rgba(76,195,138,.1); border: 1px solid rgba(76,195,138,.4); color: #9be3bf; }
 .up-err { background: rgba(239,83,80,.1); border: 1px solid rgba(239,83,80,.45); color: #ffb3b1; }
+
+/* ---------- multi-file, list, copy ---------- */
+.select { font: inherit; color: var(--text); background: var(--bg2); border: 1.5px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.select:focus { border-color: var(--gold); outline: none; }
+.file-filter { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
+.file-filter .select { flex: 1; }
+#barcode { padding-left: 100px; }
+.paste-btn { left: 50px; }
+.list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.list-head h2 { margin: 0 0 10px; font-size: 1.3rem; }
+.list-tools { display: flex; gap: 8px; }
+.list-tools input { flex: 1; min-width: 0; padding: 11px 12px; }
+.list-tools .select { max-width: 45%; }
+.list-actions { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+.small-btn { padding: 8px 12px; font-size: .88rem; font-weight: 600; }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.li { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
+.li:hover { border-color: var(--gold-dim); }
+.li.dup { border-color: rgba(239,83,80,.5); }
+.li .main { flex: 1; min-width: 0; }
+.li .bc { font-family: Consolas, monospace; color: var(--gold2); direction: ltr; text-align: right; font-size: .95rem; }
+.li .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li .meta { color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.copy-btn { flex: none; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+.copy-btn:hover, .copy-btn.done { color: var(--gold); border-color: var(--gold-dim); }
+.copy-btn svg { width: 20px; height: 20px; }
+.pager { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+.copy-row { display: flex; gap: 8px; margin-top: 12px; }
+.copy-row .btn { flex: 1; }
+.files-card { margin-top: 12px; }
+.files-card h3 { margin: 0 0 10px; font-size: 1.05rem; }
+.files-list { display: flex; flex-direction: column; gap: 8px; }
+.fi { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg2); }
+.fi .main { flex: 1; min-width: 0; }
+.fi .nm { word-break: break-all; }
+.fi .meta { color: var(--muted); font-size: .78rem; }
+.fi.err { border-color: rgba(239,83,80,.5); }
+.del-btn { flex: none; border: 1px solid rgba(239,83,80,.45); color: #ffb3b1; background: transparent; border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; font-size: .82rem; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #2a2412; color: var(--gold2); border: 1px solid var(--gold-dim); padding: 10px 16px; border-radius: 10px; z-index: 50; font-size: .92rem; box-shadow: 0 8px 24px rgba(0,0,0,.4); }

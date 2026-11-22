@@ -19,6 +19,9 @@
       </div>
     </div>
     <div class="top-actions">
+    <button type="button" class="icon-btn" id="listOpen" title="كل الباركودات" aria-label="كل الباركودات">
+      <svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
     <button type="button" class="icon-btn" id="uploadOpen" title="رفع ملف Excel" aria-label="رفع ملف Excel" hidden>
       <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0-5 5m5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
@@ -56,10 +59,17 @@
         <p class="muted small">وجّه الماسح نحو الباركود واضغط زر المسح</p>
       </div>
       <form id="scanForm" class="scan-form" autocomplete="off">
+        <label class="file-filter" id="scanFilterWrap" hidden>
+          <span>البحث في:</span>
+          <select id="scanFilter" class="select"><option value="">كل الملفات</option></select>
+        </label>
         <div class="input-wrap">
           <input id="barcode" name="barcode" type="text" dir="ltr" inputmode="none"
                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                  maxlength="64" placeholder="الباركود" aria-label="الباركود">
+          <button type="button" class="kbd-toggle paste-btn" id="pasteBtn" title="لصق" aria-label="لصق">
+            <svg viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 4V3h6v1M9 10h6M9 14h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
           <button type="button" class="kbd-toggle" id="kbdToggle" title="إظهار لوحة المفاتيح" aria-label="إظهار لوحة المفاتيح">
             <svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 10h1M10 10h1M14 10h1M18 10h1M7 14h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           </button>
@@ -78,6 +88,29 @@
       </aside>
     </section>
 
+    <!-- All barcodes -->
+    <section class="view" id="viewList" hidden>
+      <div class="list-head">
+        <h2>كل الباركودات</h2>
+        <span class="muted small" id="listCount"></span>
+      </div>
+      <div class="list-tools">
+        <input id="listSearch" type="search" placeholder="بحث بالباركود أو الاسم أو الفئة…" autocomplete="off">
+        <select id="listFilter" class="select"><option value="">كل الملفات</option></select>
+      </div>
+      <div class="list-actions">
+        <button type="button" class="btn outline small-btn" id="copyBarcodes">نسخ الباركودات</button>
+        <button type="button" class="btn outline small-btn" id="copyTable">نسخ الجدول (للصق في Excel)</button>
+      </div>
+      <div class="list" id="listBody"></div>
+      <div class="pager" id="listPager" hidden>
+        <button type="button" class="btn outline small-btn" id="pgPrev">السابق</button>
+        <span class="muted small" id="pgInfo"></span>
+        <button type="button" class="btn outline small-btn" id="pgNext">التالي</button>
+      </div>
+      <button class="btn gold big" type="button" id="listClose" style="margin-top:14px">رجوع للمسح</button>
+    </section>
+
     <!-- Camera -->
     <section class="view" id="viewCamera" hidden>
       <div class="cam-box">
@@ -93,16 +126,20 @@
     <section class="view" id="viewUpload" hidden>
       <div class="card">
         <h2 class="center">رفع ملف المخزون</h2>
-        <p class="muted small">ارفع ملف Excel بصيغة <b dir="ltr">.xls</b>. سيتم فحص الملف أولاً، ولن يُستبدل الملف الحالي إلا إذا كان الملف الجديد صالحاً. تُحفظ نسخة احتياطية من الملف السابق تلقائياً.</p>
+        <p class="muted small">ارفع ملف Excel بصيغة <b dir="ltr">.xls</b> أو <b dir="ltr">.xlsx</b>. يمكنك رفع أكثر من ملف، والبحث يشمل كل الملفات. يتم فحص الملف قبل حفظه، وإذا رفعت ملفاً بنفس الاسم يحل محل القديم مع حفظ نسخة احتياطية.</p>
         <form id="uploadForm" class="scan-form">
           <label class="file-pick" id="filePick">
-            <input type="file" id="fileInput" accept=".xls,application/vnd.ms-excel">
-            <span id="fileName">اضغط لاختيار ملف Excel</span>
+            <input type="file" id="fileInput" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            <span id="fileName">اضغط لاختيار ملف Excel (.xls أو .xlsx)</span>
           </label>
           <input id="adminKey" type="password" autocomplete="off" placeholder="مفتاح المسؤول" dir="ltr">
           <button class="btn gold big" type="submit" id="uploadBtn">رفع وتحديث البيانات</button>
         </form>
         <div id="uploadMsg" hidden></div>
+      </div>
+      <div class="card files-card">
+        <h3>الملفات المرفوعة</h3>
+        <div id="filesList" class="files-list"><p class="muted small">لا توجد ملفات</p></div>
       </div>
       <button class="btn outline big" type="button" id="uploadClose" style="margin-top:12px">رجوع للمسح</button>
     </section>

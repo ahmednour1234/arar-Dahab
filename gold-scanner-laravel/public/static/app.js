@@ -58,7 +58,7 @@
   }
 
   function show(view) {
-    ["viewKey", "viewScan", "viewCamera", "viewUpload", "viewLoading", "viewResult"].forEach((v) => ($(v).hidden = v !== view));
+    ["viewKey", "viewScan", "viewList", "viewCamera", "viewUpload", "viewLoading", "viewResult"].forEach((v) => ($(v).hidden = v !== view));
     if (state.view === "viewCamera" && view !== "viewCamera") stopCamera();
     state.view = view;
     if (view === "viewScan") focusInput();
@@ -169,7 +169,8 @@
     state.busy = true;
     show("viewLoading");
     try {
-      const r = await api("/api/item/" + encodeURIComponent(code));
+      const fid = $("scanFilter").value;
+      const r = await api("/api/item/" + encodeURIComponent(code) + (fid ? "?file=" + encodeURIComponent(fid) : ""));
       state.online = true;
       if (r.status === 401) { askKey(true); return; }
       renderResult(r.status, r.body || {}, code);
@@ -212,6 +213,9 @@
       Object.keys(f).forEach((k) => { if (!main.includes(k) && !["making_charge", "branch", "notes"].includes(k)) rows.push([label(k, k), esc(f[k])]); });
       (body.item.extra || []).forEach((x) => rows.push([esc(x.label), esc(x.value)]));
       rows.push(["الحالة", statusBadge(f.status)]);
+      const loc = body.item.location || {};
+      if (loc.file) rows.push(["الملف", esc(loc.file) + ' <span class="muted small">(صف ' + esc(loc.row) + ")</span>"]);
+      state.lastItem = { fields: f, labels: L, extra: body.item.extra || [], location: loc };
       rows.push([label("barcode", "الباركود"), '<span dir="ltr">' + esc(f.barcode) + "</span>"]);
 
       html =
@@ -228,12 +232,16 @@
         "</article>" +
         '<section class="details"><dl>' +
           rows.map((r) => '<div class="r"><dt>' + r[0] + "</dt><dd>" + r[1] + "</dd></div>").join("") +
-        "</dl></section>";
+        "</dl></section>" +
+        '<div class="copy-row">' +
+          '<button type="button" class="btn outline small-btn" data-copy="barcode">نسخ الباركود</button>' +
+          '<button type="button" class="btn outline small-btn" data-copy="details">نسخ التفاصيل</button>' +
+        "</div>";
     } else if (status === 404) {
       html = '<div class="msg nf">' + ICON_NF + "<h2>القطعة غير موجودة في ملف المخزون</h2>" +
         '<span class="code">' + esc(code) + "</span>" + staleNote(body) + "</div>";
     } else if (status === 409) {
-      const locs = (body.locations || []).map((l) => "<li>ورقة " + esc(l.sheet) + " — صف " + esc(l.row) + "</li>").join("");
+      const locs = (body.locations || []).map((l) => "<li>" + (l.file ? esc(l.file) + " — " : "") + "ورقة " + esc(l.sheet) + " — صف " + esc(l.row) + "</li>").join("");
       html = '<div class="msg dup">' + ICON_WARN + "<h2>خطأ: باركود مكرر</h2>" +
         "<p>هذا الباركود مسجل " + esc(body.count || 2) + " مرات في ملف المخزون، ولا يمكن عرض قطعة واحدة بشكل مؤكد. يرجى تصحيح ملف Excel.</p>" +
         '<span class="code">' + esc(code) + "</span><ul>" + locs + "</ul></div>";
@@ -372,11 +380,12 @@
     $("uploadMsg").hidden = true;
     $("adminKey").value = sessionStorage.getItem(ADMIN_STORE) || "";
     show("viewUpload");
+    loadFiles();
   });
   $("uploadClose").addEventListener("click", () => show("viewScan"));
   $("fileInput").addEventListener("change", () => {
     const f = $("fileInput").files[0];
-    $("fileName").textContent = f ? f.name + " (" + (f.size / 1024).toFixed(0) + " KB)" : "اضغط لاختيار ملف Excel";
+    $("fileName").textContent = f ? f.name + " (" + (f.size / 1024).toFixed(0) + " KB)" : "اضغط لاختيار ملف Excel (.xls أو .xlsx)";
     $("filePick").classList.toggle("has", !!f);
   });
   $("uploadForm").addEventListener("submit", async (e) => {
@@ -385,7 +394,7 @@
     const msg = $("uploadMsg");
     const say = (ok, html) => { msg.className = ok ? "up-ok" : "up-err"; msg.innerHTML = html; msg.hidden = false; };
     if (!f) return say(false, "اختر ملف Excel أولاً.");
-    if (!/\.xls$/i.test(f.name)) return say(false, "الملف يجب أن يكون بصيغة <b dir=\"ltr\">.xls</b> (في Excel: حفظ باسم ← Excel 97-2003 Workbook).");
+    if (!/\.xlsx?$/i.test(f.name)) return say(false, "الملف يجب أن يكون بصيغة <b dir=\"ltr\">.xls</b> أو <b dir=\"ltr\">.xlsx</b>.");
     const admin = $("adminKey").value.trim();
     if (!admin) return say(false, "أدخل مفتاح المسؤول.");
     $("uploadBtn").disabled = true;
@@ -393,18 +402,18 @@
     try {
       const res = await fetch(BASE + "/api/admin/upload", {
         method: "POST",
-        headers: { "X-Access-Key": state.key, "X-Admin-Key": admin, "Content-Type": "application/octet-stream" },
+        headers: { "X-Access-Key": state.key, "X-Admin-Key": admin, "X-Filename": encodeURIComponent(f.name), "Content-Type": "application/octet-stream" },
         body: f,
       });
       let body = {};
       try { body = await res.json(); } catch (_) {}
       if (res.ok) {
         try { sessionStorage.setItem(ADMIN_STORE, admin); } catch (_) {}
-        let html = "✔ تم رفع الملف وتحديث البيانات بنجاح.<br>عدد القطع: <b>" + esc(body.records) + "</b>";
+        let html = "✔ " + (body.file && body.file.replaced ? "تم تحديث الملف " : "تمت إضافة الملف ") + "<b>" + esc(body.file ? body.file.name : f.name) + "</b> بنجاح.<br>عدد القطع في الملف: <b>" + esc(body.records) + "</b>";
         if (body.duplicate_barcodes) html += "<br>⚠ يوجد " + esc(body.duplicate_barcodes) + " باركود مكرر في الملف.";
         say(true, html);
-        $("fileInput").value = ""; $("fileName").textContent = "اضغط لاختيار ملف Excel"; $("filePick").classList.remove("has");
-        pollHealth(); loadDemo();
+        $("fileInput").value = ""; $("fileName").textContent = "اضغط لاختيار ملف Excel (.xls أو .xlsx)"; $("filePick").classList.remove("has");
+        pollHealth(); loadDemo(); loadFiles();
       } else {
         say(false, "✖ لم يتم رفع الملف: " + esc(body.detail || ("خطأ " + res.status)) + "<br>البيانات الحالية لم تتغير.");
       }
@@ -414,6 +423,164 @@
       $("uploadBtn").disabled = false;
       $("uploadBtn").textContent = "رفع وتحديث البيانات";
     }
+  });
+
+  // ---------- copy / paste ----------
+  function toast(msg) {
+    const t = document.createElement("div");
+    t.className = "toast"; t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 1600);
+  }
+  async function copyText(text, okMsg) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+      else {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+      }
+      toast(okMsg || "تم النسخ");
+      return true;
+    } catch (_) { toast("تعذر النسخ"); return false; }
+  }
+  function itemText(it) {
+    const lines = [];
+    Object.keys(it.fields).forEach((k) => { if (it.fields[k] !== "") lines.push((it.labels[k] || k) + ": " + it.fields[k]); });
+    it.extra.forEach((x) => lines.push(x.label + ": " + x.value));
+    if (it.location && it.location.file) lines.push("الملف: " + it.location.file);
+    return lines.join("\n");
+  }
+  $("resultBody").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-copy]");
+    if (!b || !state.lastItem) return;
+    if (b.dataset.copy === "barcode") copyText(state.lastItem.fields.barcode, "تم نسخ الباركود");
+    else copyText(itemText(state.lastItem), "تم نسخ التفاصيل");
+  });
+  $("pasteBtn").addEventListener("click", async () => {
+    try {
+      const t = (await navigator.clipboard.readText()).trim().split(/\s+/)[0] || "";
+      if (!t) { toast("الحافظة فارغة"); return; }
+      $("barcode").value = t;
+      search(t);
+    } catch (_) {
+      // Clipboard read not allowed (http or permission): let the user paste manually
+      state.manualKeyboard = true; $("kbdToggle").classList.add("on");
+      focusInput(); toast("اضغط مطولاً داخل الخانة ثم اختر لصق");
+    }
+  });
+  // Pasting a barcode into the field (Ctrl+V or long-press) searches immediately
+  $("barcode").addEventListener("paste", (e) => {
+    const t = ((e.clipboardData || window.clipboardData).getData("text") || "").trim().split(/\s+/)[0];
+    if (t) { e.preventDefault(); $("barcode").value = t; search(t); }
+  });
+
+  // ---------- files (filters + management) ----------
+  state.files = [];
+  function fillFilter(sel, keep) {
+    const cur = keep ? sel.value : "";
+    sel.innerHTML = '<option value="">كل الملفات (' + state.files.length + ")</option>" +
+      state.files.map((f) => '<option value="' + esc(f.id) + '">' + esc(f.name) + " — " + esc(f.records) + " قطعة</option>").join("");
+    if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  }
+  async function loadFiles() {
+    try {
+      const r = await api("/api/files");
+      if (r.status !== 200) return;
+      state.files = r.body.files || [];
+      fillFilter($("scanFilter"), true);
+      fillFilter($("listFilter"), true);
+      $("scanFilterWrap").hidden = state.files.length < 2;
+      $("filesList").innerHTML = state.files.length ? state.files.map((f) =>
+        '<div class="fi' + (f.state !== "ok" ? " err" : "") + '"><div class="main"><div class="nm">' + esc(f.name) + '</div><div class="meta">' +
+        esc(f.records) + " قطعة" + (f.duplicate_barcodes ? " • " + esc(f.duplicate_barcodes) + " مكرر" : "") +
+        " • " + esc(fmtTime(f.loaded_at)) + (f.last_error ? '<br><span style="color:#ffb3b1">' + esc(f.last_error) + "</span>" : "") +
+        '</div></div><button type="button" class="del-btn" data-del="' + esc(f.id) + '" data-name="' + esc(f.name) + '">حذف</button></div>').join("")
+        : '<p class="muted small">لا توجد ملفات</p>';
+    } catch (_) {}
+  }
+  $("filesList").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-del]");
+    if (!b) return;
+    const admin = $("adminKey").value.trim();
+    if (!admin) { toast("أدخل مفتاح المسؤول أولاً"); $("adminKey").focus(); return; }
+    if (!confirm("حذف الملف \"" + b.dataset.name + "\"؟ (تُحفظ نسخة احتياطية على الخادم)")) return;
+    try {
+      const res = await fetch(BASE + "/api/admin/files/" + b.dataset.del, {
+        method: "DELETE", headers: { "X-Access-Key": state.key, "X-Admin-Key": admin } });
+      let body = {}; try { body = await res.json(); } catch (_) {}
+      if (res.ok) { try { sessionStorage.setItem(ADMIN_STORE, admin); } catch (_) {} toast("تم حذف الملف"); loadFiles(); pollHealth(); loadDemo(); }
+      else toast(body.detail || "تعذر الحذف");
+    } catch (_) { toast("تعذر الاتصال بالخادم"); }
+  });
+
+  // ---------- all barcodes list ----------
+  const list = { page: 1, pages: 1, items: [], timer: null };
+  function listQuery(extra) {
+    const q = $("listSearch").value.trim(), fid = $("listFilter").value;
+    return "/api/items?" + extra + (q ? "&q=" + encodeURIComponent(q) : "") + (fid ? "&file=" + encodeURIComponent(fid) : "");
+  }
+  async function loadList() {
+    $("listBody").innerHTML = '<div class="spinner" style="margin:30px auto"></div>';
+    try {
+      const r = await api(listQuery("per_page=100&page=" + list.page));
+      if (r.status === 401) { askKey(true); return; }
+      const b = r.body || {};
+      list.items = b.items || []; list.pages = b.pages || 1;
+      $("listCount").textContent = (b.total || 0) + " قطعة";
+      $("listBody").innerHTML = list.items.length ? list.items.map((it, i) =>
+        '<div class="li' + (it.duplicate ? " dup" : "") + '" data-i="' + i + '"><div class="main">' +
+        '<div class="bc">' + esc(it.barcode) + (it.duplicate ? ' <span class="badge err">مكرر</span>' : "") + "</div>" +
+        '<div class="nm">' + esc(it.item_name || "—") + "</div>" +
+        '<div class="meta">' + [it.karat && "عيار " + esc(it.karat), it.weight && fmtNum(it.weight) + " جم", it.price && fmtNum(it.price) + " ر.س", esc(it.file)].filter(Boolean).join(" • ") + "</div>" +
+        '</div><button type="button" class="copy-btn" data-c="' + i + '" title="نسخ الباركود" aria-label="نسخ الباركود">' +
+        '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button></div>').join("")
+        : '<p class="muted center">لا توجد نتائج</p>';
+      $("listPager").hidden = list.pages <= 1;
+      $("pgInfo").textContent = "صفحة " + list.page + " من " + list.pages;
+      $("pgPrev").disabled = list.page <= 1; $("pgNext").disabled = list.page >= list.pages;
+    } catch (_) {
+      $("listBody").innerHTML = '<p class="error">تعذر الاتصال بالخادم</p>';
+    }
+  }
+  $("listOpen").addEventListener("click", () => { show("viewList"); list.page = 1; loadFiles().then(loadList); });
+  $("listClose").addEventListener("click", () => show("viewScan"));
+  $("listSearch").addEventListener("input", () => { clearTimeout(list.timer); list.timer = setTimeout(() => { list.page = 1; loadList(); }, 300); });
+  $("listFilter").addEventListener("change", () => { list.page = 1; loadList(); });
+  $("pgPrev").addEventListener("click", () => { if (list.page > 1) { list.page--; loadList(); } });
+  $("pgNext").addEventListener("click", () => { if (list.page < list.pages) { list.page++; loadList(); } });
+  $("listBody").addEventListener("click", (e) => {
+    const c = e.target.closest("[data-c]");
+    if (c) { const it = list.items[+c.dataset.c]; copyText(it.barcode, "تم نسخ " + it.barcode); c.classList.add("done"); return; }
+    const row = e.target.closest("[data-i]");
+    if (row) {
+      const it = list.items[+row.dataset.i];
+      // a duplicated barcode opens the copy from this row's file
+      if (it.duplicate) $("scanFilter").value = it.file_id;
+      search(it.barcode);
+    }
+  });
+  async function fetchAllRows() {
+    const first = await api(listQuery("per_page=1000&page=1"), { timeout: 20000 });
+    let rows = (first.body && first.body.items) || [];
+    const pages = (first.body && first.body.pages) || 1;
+    for (let p = 2; p <= pages; p++) {
+      const rp = await api(listQuery("per_page=1000&page=" + p), { timeout: 20000 });
+      rows = rows.concat((rp.body && rp.body.items) || []);
+    }
+    return rows;
+  }
+  $("copyBarcodes").addEventListener("click", async () => {
+    const rows = await fetchAllRows();
+    copyText(rows.map((r) => r.barcode).join("\n"), "تم نسخ " + rows.length + " باركود");
+  });
+  $("copyTable").addEventListener("click", async () => {
+    const rows = await fetchAllRows();
+    const clean = (v) => String(v == null ? "" : v).replace(/[\t\r\n]+/g, " ");
+    const head = ["الباركود", "اسم القطعة", "الفئة", "العيار", "الوزن", "السعر", "الحالة", "الملف"];
+    const tsv = [head.join("\t")].concat(rows.map((r) =>
+      [r.barcode, r.item_name, r.category, r.karat, r.weight, r.price, r.status, r.file].map(clean).join("\t"))).join("\n");
+    copyText(tsv, "تم نسخ " + rows.length + " صف — الصقه في Excel");
   });
 
   // ---------- demo panel ----------
@@ -438,6 +605,7 @@
     show("viewScan");
     $("uploadOpen").hidden = !state.cfg.upload_enabled;
     await pollHealth();
+    loadFiles();
     loadDemo();
     clearInterval(pollTimer);
     pollTimer = setInterval(pollHealth, Math.max(2, state.cfg.poll_interval_seconds || 3) * 1000);

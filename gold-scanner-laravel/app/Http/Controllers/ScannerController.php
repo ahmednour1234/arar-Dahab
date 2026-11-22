@@ -50,15 +50,15 @@ class ScannerController extends Controller
         ]);
     }
 
-    public function item(string $barcode): JsonResponse
+    public function item(Request $request, string $barcode): JsonResponse
     {
         if (! InventoryParser::validBarcode($barcode)) {
             return response()->json(['detail' => 'صيغة الباركود غير صالحة'], 400);
         }
-        $snap = $this->store->snapshot();
-        if ($snap === null) {
+        if (! $this->store->snapshots()) {
             return response()->json(['detail' => 'لم يتم تحميل ملف المخزون بعد'], 503);
         }
+        $snap = $this->store->combined($this->fileFilter($request));
         $st = $this->store->state();
         $meta = ['data_state' => $st['state'], 'last_success' => $st['last_success'], 'last_error' => $st['last_error']];
         $key = InventoryParser::normalizeKey($barcode, (bool) $this->cfg('case_insensitive_barcodes', true));
@@ -84,7 +84,7 @@ class ScannerController extends Controller
         if (! $this->cfg('demo_mode')) {
             return response()->json(['detail' => 'غير متاح'], 404);
         }
-        $snap = $this->store->snapshot();
+        $snap = $this->store->snapshots() ? $this->store->combined() : null;
         $out = [];
         if ($snap) {
             $singles = [];
@@ -153,7 +153,8 @@ class ScannerController extends Controller
         rename($tmp, $tmpExt);
         file_put_contents($tmpExt, $data);
         try {
-            $snap = $this->store->replaceWithUpload($tmpExt, $ext);
+            $name = rawurldecode((string) $request->header('X-Filename', 'inventory.'.$ext));
+            $snap = $this->store->addUpload($tmpExt, $ext, $name);
         } catch (InventoryReadException $e) {
             return response()->json(['detail' => $e->getMessage()], 400);
         } finally {
@@ -166,7 +167,81 @@ class ScannerController extends Controller
             'records' => $snap['total_rows'],
             'duplicate_barcodes' => count($snap['duplicates']),
             'warnings' => $snap['warnings'],
+            'file' => $snap['file'],
+            'files' => $this->store->files(),
             'excel' => $this->store->state(),
         ]);
+    }
+
+    private function fileFilter(Request $request): ?string
+    {
+        $f = (string) $request->query('file', '');
+
+        return preg_match('/^[0-9a-f]{12}$/', $f) ? $f : null;
+    }
+
+    public function files(): JsonResponse
+    {
+        return response()->json(['files' => $this->store->files()]);
+    }
+
+    /** All items (optionally one file), searchable, paginated. */
+    public function items(Request $request): JsonResponse
+    {
+        $snap = $this->store->combined($this->fileFilter($request));
+        $q = mb_strtolower(trim((string) $request->query('q', '')));
+        $perPage = max(10, min(1000, (int) $request->query('per_page', 100)));
+        $page = max(1, (int) $request->query('page', 1));
+        $rows = [];
+        foreach ($snap['records'] as $key => $list) {
+            foreach ($list as $rec) {
+                $f = $rec['fields'];
+                if ($q !== '') {
+                    $hay = mb_strtolower(implode(' ', $f).' '.$rec['location']['file']);
+                    if (! str_contains($hay, $q)) {
+                        continue;
+                    }
+                }
+                $rows[] = [
+                    'barcode' => $f['barcode'],
+                    'item_name' => $f['item_name'] ?? '',
+                    'category' => $f['category'] ?? '',
+                    'karat' => $f['karat'] ?? '',
+                    'weight' => $f['weight'] ?? '',
+                    'price' => $f['price'] ?? '',
+                    'status' => $f['status'] ?? '',
+                    'file' => $rec['location']['file'],
+                    'file_id' => $rec['location']['file_id'],
+                    'row' => $rec['location']['row'],
+                    'duplicate' => isset($snap['duplicates'][$key]),
+                ];
+            }
+        }
+        usort($rows, fn ($a, $b) => [$a['file'], $a['row']] <=> [$b['file'], $b['row']]);
+        $total = count($rows);
+
+        return response()->json([
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'pages' => (int) max(1, ceil($total / $perPage)),
+            'items' => array_slice($rows, ($page - 1) * $perPage, $perPage),
+        ]);
+    }
+
+    public function deleteFile(Request $request, string $id): JsonResponse
+    {
+        $admin = (string) $this->cfg('admin_key');
+        if (! $this->cfg('upload_enabled')) {
+            return response()->json(['detail' => 'رفع الملفات غير مفعّل'], 404);
+        }
+        if ($admin === '' || ! hash_equals($admin, (string) $request->header('X-Admin-Key', ''))) {
+            return response()->json(['detail' => 'مفتاح المسؤول غير صحيح'], 401);
+        }
+        if (! $this->store->deleteFile($id)) {
+            return response()->json(['detail' => 'الملف غير موجود'], 404);
+        }
+
+        return response()->json(['ok' => true, 'files' => $this->store->files(), 'excel' => $this->store->state()]);
     }
 }
