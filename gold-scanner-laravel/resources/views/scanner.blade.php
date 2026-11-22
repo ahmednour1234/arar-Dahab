@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0f10">
+  <meta name="robots" content="noindex, nofollow">
+  <title>ماسح الذهب</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23d4af37' d='M6 3h12l4 6-10 12L2 9z'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12l4 6-10 12L2 9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M2 9h20M9 3l3 18 3-18M6 3l3 6m9-6-3 6" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".7"/></svg>
+      <div>
+        <h1>ماسح الذهب</h1>
+        <div class="sync" id="syncText">جارٍ الاتصال…</div>
+      </div>
+    </div>
+    <div class="top-actions">
+    <button type="button" class="icon-btn" id="uploadOpen" title="رفع ملف Excel" aria-label="رفع ملف Excel" hidden>
+      <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0-5 5m5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="conn" id="conn" data-state="loading" title="حالة الاتصال">
+      <span class="dot"></span><span id="connText">اتصال</span>
+    </div>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <main>
+    <!-- Access key -->
+    <section class="view" id="viewKey" hidden>
+      <div class="card center">
+        <h2>مفتاح الدخول</h2>
+        <p class="muted">أدخل مفتاح الدخول الذي حدده مسؤول النظام.</p>
+        <form id="keyForm" class="row">
+          <input id="keyInput" type="password" autocomplete="off" placeholder="مفتاح الدخول" dir="ltr">
+          <button class="btn gold" type="submit">دخول</button>
+        </form>
+        <p class="error" id="keyError" hidden></p>
+      </div>
+    </section>
+
+    <!-- Scan -->
+    <section class="view" id="viewScan" hidden>
+      <div class="scan-hero">
+        <svg class="scan-icon" viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M6 18V8h10M48 8h10v10M58 46v10H48M16 56H6V46" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+          <g fill="currentColor" opacity=".9"><rect x="15" y="18" width="3" height="28"/><rect x="21" y="18" width="1.6" height="28"/><rect x="25" y="18" width="4" height="28"/><rect x="32" y="18" width="1.6" height="28"/><rect x="36" y="18" width="3" height="28"/><rect x="42" y="18" width="1.6" height="28"/><rect x="46" y="18" width="3" height="28"/></g>
+          <line class="laser" x1="10" y1="32" x2="54" y2="32" stroke="#ff4d4d" stroke-width="1.5"/>
+        </svg>
+        <h2>امسح باركود القطعة</h2>
+        <p class="muted small">وجّه الماسح نحو الباركود واضغط زر المسح</p>
+      </div>
+      <form id="scanForm" class="scan-form" autocomplete="off">
+        <div class="input-wrap">
+          <input id="barcode" name="barcode" type="text" dir="ltr" inputmode="none"
+                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                 maxlength="64" placeholder="الباركود" aria-label="الباركود">
+          <button type="button" class="kbd-toggle" id="kbdToggle" title="إظهار لوحة المفاتيح" aria-label="إظهار لوحة المفاتيح">
+            <svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 10h1M10 10h1M14 10h1M18 10h1M7 14h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <button class="btn gold big" type="submit" id="searchBtn">بحث</button>
+        <button class="btn outline big" type="button" id="cameraBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          مسح بكاميرا الجوال
+        </button>
+      </form>
+      <p class="error" id="scanError" hidden></p>
+
+      <aside class="demo" id="demoPanel" hidden>
+        <div class="demo-head"><span class="tag">للتجربة فقط</span> باركودات تجريبية</div>
+        <div class="chips" id="demoChips"></div>
+      </aside>
+    </section>
+
+    <!-- Camera -->
+    <section class="view" id="viewCamera" hidden>
+      <div class="cam-box">
+        <video id="camVideo" playsinline muted></video>
+        <div class="cam-frame"><span class="cam-laser"></span></div>
+      </div>
+      <p class="muted center small" id="camHint">وجّه الكاميرا نحو الباركود — سيتم البحث تلقائياً</p>
+      <p class="error" id="camError" hidden></p>
+      <button class="btn outline big" type="button" id="camClose">إلغاء</button>
+    </section>
+
+    <!-- Upload -->
+    <section class="view" id="viewUpload" hidden>
+      <div class="card">
+        <h2 class="center">رفع ملف المخزون</h2>
+        <p class="muted small">ارفع ملف Excel بصيغة <b dir="ltr">.xls</b>. سيتم فحص الملف أولاً، ولن يُستبدل الملف الحالي إلا إذا كان الملف الجديد صالحاً. تُحفظ نسخة احتياطية من الملف السابق تلقائياً.</p>
+        <form id="uploadForm" class="scan-form">
+          <label class="file-pick" id="filePick">
+            <input type="file" id="fileInput" accept=".xls,application/vnd.ms-excel">
+            <span id="fileName">اضغط لاختيار ملف Excel</span>
+          </label>
+          <input id="adminKey" type="password" autocomplete="off" placeholder="مفتاح المسؤول" dir="ltr">
+          <button class="btn gold big" type="submit" id="uploadBtn">رفع وتحديث البيانات</button>
+        </form>
+        <div id="uploadMsg" hidden></div>
+      </div>
+      <button class="btn outline big" type="button" id="uploadClose" style="margin-top:12px">رجوع للمسح</button>
+    </section>
+
+    <!-- Loading -->
+    <section class="view" id="viewLoading" hidden>
+      <div class="spinner" aria-label="جارٍ البحث"></div>
+    </section>
+
+    <!-- Result -->
+    <section class="view" id="viewResult" hidden>
+      <div id="resultBody"></div>
+      <button class="btn gold big sticky" id="newScanBtn" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 8v8M10 8v8M13 8v8M16 8v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        مسح قطعة جديدة
+      </button>
+    </section>
+  </main>
+
+  <footer class="foot">البيانات من آخر ملف Excel تم تحميله على الخادم</footer>
+  <script src="/static/vendor/zxing.min.js" defer></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

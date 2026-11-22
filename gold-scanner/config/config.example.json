@@ -1,0 +1,42 @@
+{
+  "excel_path": "data/inventory.xls",
+  "sheets": [],
+  "header_row": 1,
+  "columns": {
+    "barcode":       ["Barcode", "الباركود", "باركود"],
+    "item_name":     ["Item Name", "اسم القطعة", "الصنف"],
+    "category":      ["Category", "الفئة", "التصنيف"],
+    "karat":         ["Karat", "العيار"],
+    "weight":        ["Weight", "الوزن"],
+    "making_charge": ["Making Charge", "المصنعية"],
+    "price":         ["Price", "السعر"],
+    "status":        ["Status", "الحالة"],
+    "branch":        ["Branch", "الفرع"],
+    "notes":         ["Notes", "ملاحظات"]
+  },
+  "include_unmapped_columns": true,
+  "case_insensitive_barcodes": true,
+
+  "host": "0.0.0.0",
+  "port": 8000,
+  "access_key": "change-me-1234",
+  "allowed_networks": ["127.0.0.0/8", "::1/128", "192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"],
+
+  "demo_mode": true,
+  "poll_interval_seconds": 3,
+  "debounce_seconds": 1.0,
+  "stable_wait_seconds": 0.7,
+  "read_retries": 6,
+  "retry_delay_seconds": 1.0,
+
+  "scanner_suffix": "enter",
+  "scanner_idle_submit_ms": 250,
+
+  "upload_enabled": true,
+  "admin_key": "admin-change-me-5678",
+  "max_upload_mb": 20,
+  "backups_keep": 10,
+
+  "ssl_certfile": "",
+  "ssl_keyfile": ""
+}

@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+.pytest_cache/
+config/config.json
+config/*.pem
+data/backups/

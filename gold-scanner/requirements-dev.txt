@@ -1,0 +1,5 @@
+-r requirements.txt
+xlwt==1.3.0
+pytest>=8.0
+httpx>=0.27
+cryptography>=41   # only for scripts/make_cert.py

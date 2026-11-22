@@ -1,0 +1,33 @@
+<?php
+
+use App\Http\Middleware\GoldScannerGuard;
+use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Configuration\Exceptions;
+use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
+
+return Application::configure(basePath: dirname(__DIR__))
+    ->withRouting(
+        web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
+        commands: __DIR__.'/../routes/console.php',
+        health: '/up',
+    )
+    ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->alias(['gs' => GoldScannerGuard::class]);
+        // Behind a reverse proxy / load balancer (nginx, Cloudflare, cPanel), trust X-Forwarded-* headers.
+        $middleware->trustProxies(at: '*');
+    })
+    ->withExceptions(function (Exceptions $exceptions): void {
+        // API errors always as JSON with a "detail" key (the frontend reads it).
+        $exceptions->render(function (Throwable $e, Request $request) {
+            if ($request->is('api/*')) {
+                $status = method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500;
+                $detail = $status === 404 ? 'غير موجود' : ($status === 429 ? 'محاولات كثيرة، حاول بعد دقيقة' : 'خطأ في الخادم');
+
+                return response()->json(['detail' => $detail], $status);
+            }
+
+            return null;
+        });
+    })->create();
