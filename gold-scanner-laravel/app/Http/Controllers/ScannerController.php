@@ -86,6 +86,88 @@ class ScannerController extends Controller
         return response()->json(['channel' => $channel] + $this->live->since($channel, max(0, (int) $request->query('after', 0))));
     }
 
+    /** Build an .xlsx of selected scans from a live channel. Body: {"channel": "...", "ids": [1,2,...]} */
+    public function exportLive(Request $request)
+    {
+        $channel = LiveFeed::cleanChannel((string) $request->input('channel', 'main'));
+        $ids = array_slice(array_filter(array_map('intval', (array) $request->input('ids', []))), 0, 2000);
+        $events = $this->live->byIds($channel, $ids);
+        if (! $events) {
+            return response()->json(['detail' => 'لا توجد عمليات مسح للحفظ'], 404);
+        }
+
+        $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet;
+        $sh = $book->getActiveSheet();
+        $sh->setTitle('المسح');
+        $sh->setRightToLeft(true);
+        $head = ['#', 'التاريخ', 'الوقت', 'الجهاز', 'الباركود', 'اسم القطعة', 'الفئة', 'العيار', 'الوزن (جم)', 'المصنعية', 'السعر', 'الحالة', 'الفرع', 'تفاصيل إضافية', 'الملف', 'النتيجة'];
+        $sh->fromArray($head, null, 'A1');
+        $r = 2;
+        $found = 0;
+        $weight = 0.0;
+        $price = 0.0;
+        foreach ($events as $i => $ev) {
+            $b = $ev['body'] ?? [];
+            $f = $b['item']['fields'] ?? [];
+            $ts = \Illuminate\Support\Carbon::parse($ev['ts'])->setTimezone(config('app.timezone'));
+            $result = match ((int) $ev['status']) {
+                200 => 'موجودة',
+                404 => 'غير موجودة',
+                409 => 'باركود مكرر',
+                default => 'خطأ',
+            };
+            $extra = implode(' | ', array_map(fn ($x) => $x['label'].': '.$x['value'], $b['item']['extra'] ?? []));
+            $row = [$i + 1, $ts->format('Y-m-d'), $ts->format('H:i:s'), $ev['device'] ?? '', null,
+                $f['item_name'] ?? '', $f['category'] ?? '', $f['karat'] ?? '', null, null, null,
+                $f['status'] ?? '', $f['branch'] ?? '', $extra, $b['item']['location']['file'] ?? '', $result];
+            $sh->fromArray($row, null, 'A'.$r);
+            // barcode always as text (keeps leading zeros); numbers as real numbers
+            $sh->setCellValueExplicit('E'.$r, (string) ($f['barcode'] ?? $ev['barcode']), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            foreach (['I' => 'weight', 'J' => 'making_charge', 'K' => 'price'] as $col => $k) {
+                $v = $f[$k] ?? '';
+                if ($v !== '' && is_numeric($v)) {
+                    $sh->setCellValue($col.$r, (float) $v);
+                } else {
+                    $sh->setCellValueExplicit($col.$r, (string) $v, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                }
+            }
+            if ((int) $ev['status'] === 200) {
+                $found++;
+                $weight += is_numeric($f['weight'] ?? null) ? (float) $f['weight'] : 0;
+                $price += is_numeric($f['price'] ?? null) ? (float) $f['price'] : 0;
+            } else {
+                $sh->getStyle('A'.$r.':P'.$r)->getFont()->getColor()->setRGB('C62828');
+            }
+            $r++;
+        }
+        // totals
+        $sh->setCellValue('A'.$r, 'الإجمالي');
+        $sh->setCellValue('E'.$r, 'عدد القطع الموجودة: '.$found.' من '.count($events));
+        $sh->setCellValue('I'.$r, round($weight, 3));
+        $sh->setCellValue('K'.$r, round($price, 2));
+        $sh->getStyle('A'.$r.':P'.$r)->getFont()->setBold(true);
+        $sh->getStyle('A'.$r.':P'.$r)->getFill()->setFillType('solid')->getStartColor()->setRGB('FFF4D6');
+        $sh->getStyle('A1:P1')->getFont()->setBold(true);
+        $sh->getStyle('A1:P1')->getFill()->setFillType('solid')->getStartColor()->setRGB('D4AF37');
+        $sh->getStyle('I2:K'.$r)->getNumberFormat()->setFormatCode('#,##0.00');
+        foreach (range('A', 'P') as $col) {
+            $sh->getColumnDimension($col)->setAutoSize(true);
+        }
+        $sh->freezePane('A2');
+        $sh->setAutoFilter('A1:P'.($r - 1));
+
+        $name = 'مسح-'.$channel.'-'.now()->format('Y-m-d-His').'.xlsx';
+        $writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($book, 'Xlsx');
+
+        return response()->streamDownload(function () use ($writer, $book) {
+            $writer->save('php://output');
+            $book->disconnectWorksheets();
+        }, $name, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+
     private function lookup(Request $request, string $barcode): JsonResponse
     {
         if (! InventoryParser::validBarcode($barcode)) {

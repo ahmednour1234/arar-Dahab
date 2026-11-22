@@ -8,7 +8,7 @@ namespace App\Services;
  */
 class LiveFeed
 {
-    private const KEEP = 30;
+    private const KEEP = 1000;
 
     private string $dir;
 
@@ -60,6 +60,14 @@ class LiveFeed
         }
 
         return $event;
+    }
+
+    /** Events with the given ids (in id order). */
+    public function byIds(string $channel, array $ids): array
+    {
+        $want = array_flip(array_map('intval', $ids));
+
+        return array_values(array_filter($this->since($channel, 0)['events'], fn ($e) => isset($want[$e['id']])));
     }
 
     /** Events newer than $after (all recent ones when $after = 0). */

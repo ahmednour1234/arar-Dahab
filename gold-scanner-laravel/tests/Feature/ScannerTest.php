@@ -301,6 +301,35 @@ class ScannerTest extends TestCase
         $this->assertSame($n('Bar Code'), $n('bar-code'));
     }
 
+    public function test_export_scans_to_excel(): void
+    {
+        $this->app->singleton(\App\Services\LiveFeed::class, fn () => new \App\Services\LiveFeed($this->dir.'/live'));
+        $this->getJson('/api/item/00123456?live=c1&device=d1', $this->h)->assertOk();
+        $this->getJson('/api/item/6280001001?live=c1&device=d1', $this->h)->assertOk();
+        $this->getJson('/api/item/999999?live=c1', $this->h)->assertStatus(404);
+
+        $res = $this->postJson('/api/live/export', ['channel' => 'c1', 'ids' => [1, 2, 3]], $this->h);
+        $res->assertOk();
+        $this->assertStringContainsString('spreadsheetml', $res->headers->get('Content-Type'));
+        $this->assertStringContainsString('.xlsx', $res->headers->get('Content-Disposition'));
+        file_put_contents($f = $this->dir.'/out.xlsx', $res->streamedContent());
+
+        $sh = IOFactory::load($f)->getActiveSheet();
+        $this->assertSame('الباركود', $sh->getCell('E1')->getValue());
+        $this->assertSame('00123456', $sh->getCell('E2')->getValue());            // text, zeros kept
+        $this->assertSame(DataType::TYPE_STRING, $sh->getCell('E2')->getDataType());
+        $this->assertSame(4.35, $sh->getCell('I2')->getValue());                  // weight as a number
+        $this->assertSame('غير موجودة', $sh->getCell('P4')->getValue());
+        $this->assertSame('الإجمالي', $sh->getCell('A5')->getValue());
+        $this->assertStringContainsString('2 من 3', (string) $sh->getCell('E5')->getValue());
+
+        // only selected ids, and nothing -> 404
+        file_put_contents($f2 = $this->dir.'/one.xlsx', $this->postJson('/api/live/export', ['channel' => 'c1', 'ids' => [2]], $this->h)->streamedContent());
+        $this->assertSame('6280001001', IOFactory::load($f2)->getActiveSheet()->getCell('E2')->getValue());
+        $this->postJson('/api/live/export', ['channel' => 'c1', 'ids' => []], $this->h)->assertStatus(404);
+        $this->postJson('/api/live/export', ['channel' => 'c1', 'ids' => [1]])->assertStatus(401);
+    }
+
     public function test_csv_upload(): void
     {
         $csv = "Barcode,Item Name,Price\nCSV-1,قطعة من CSV,99\n";

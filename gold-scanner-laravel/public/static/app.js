@@ -612,7 +612,14 @@
   $("liveChannel").addEventListener("change", () => { live.channel = $("liveChannel").value.trim() || "main"; saveLive(); syncLiveUi(); focusInput(); });
   $("liveDevice").addEventListener("change", () => { live.device = $("liveDevice").value.trim(); saveLive(); focusInput(); });
 
-  const disp = { channel: "main", after: 0, timer: null, busy: false, wake: null, history: [] };
+  const disp = { channel: "main", after: 0, timer: null, busy: false, wake: null, history: [], start: 0, removed: new Set() };
+  const sessKey = (ch) => "goldScanner.session." + ch;
+  function loadSession(ch) {
+    try { const s = JSON.parse(load(sessKey(ch)) || "{}"); return { start: s.start || 0, removed: new Set(s.removed || []) }; }
+    catch (_) { return { start: 0, removed: new Set() }; }
+  }
+  function saveSession() { store(sessKey(disp.channel), JSON.stringify({ start: disp.start, removed: [...disp.removed] })); }
+  function sessionRows() { return disp.history.filter((e) => e.id > disp.start && !disp.removed.has(e.id)); }
   function beep(ok) {
     try {
       const ctx = disp.audio || (disp.audio = new (window.AudioContext || window.webkitAudioContext)());
@@ -641,12 +648,25 @@
     }
     $("displayStatus").textContent = "آخر مسح: " + (isNaN(when) ? "" : when.toLocaleTimeString("ar-SA-u-nu-latn"));
   }
-  function renderHistory() {
-    $("displayHistory").innerHTML = disp.history.slice().reverse().slice(0, 10).map((ev, i) =>
-      '<div class="li' + (ev.status === 409 ? " dup" : "") + '" data-ev="' + ev.id + '"><div class="main">' +
-      '<div class="bc">' + esc(ev.barcode) + "</div><div class=\"nm\">" + eventLabel(ev) + "</div>" +
-      '<div class="meta">' + [ev.device && esc(ev.device), esc(new Date(ev.ts).toLocaleTimeString("ar-SA-u-nu-latn"))].filter(Boolean).join(" • ") +
-      "</div></div></div>").join("");
+  function renderHistory(newId) {
+    const rows = sessionRows();
+    let w = 0, n = 0;
+    rows.forEach((ev) => { const f = (ev.body && ev.body.item && ev.body.item.fields) || {}; if (ev.status === 200) { n++; w += parseFloat(f.weight) || 0; } });
+    $("tableSummary").textContent = rows.length ? "— " + rows.length + " مسح • " + n + " موجودة • إجمالي الوزن " + fmtNum(w.toFixed(3)) + " جم" : "";
+    $("scanTableBody").innerHTML = rows.length ? rows.slice().reverse().map((ev, i) => {
+      const f = (ev.body && ev.body.item && ev.body.item.fields) || {};
+      const res = ev.status === 200 ? "موجودة" : ev.status === 404 ? "غير موجودة" : ev.status === 409 ? "مكرر" : "خطأ";
+      return '<tr data-ev="' + ev.id + '" class="' + (ev.status !== 200 ? "bad " : "") + (ev.id === newId ? "new" : "") + '">' +
+        "<td>" + (rows.length - i) + "</td>" +
+        "<td>" + esc(new Date(ev.ts).toLocaleTimeString("ar-SA-u-nu-latn")) + "</td>" +
+        '<td class="bc">' + esc(f.barcode || ev.barcode) + "</td>" +
+        '<td class="nm">' + esc(f.item_name || "") + "</td>" +
+        "<td>" + esc(f.karat || "") + "</td>" +
+        "<td>" + (f.weight ? fmtNum(f.weight) : "") + "</td>" +
+        "<td>" + (f.price ? fmtNum(f.price) : "") + "</td>" +
+        "<td>" + res + "</td>" +
+        '<td><button type="button" class="rm" data-rm="' + ev.id + '" title="حذف من الجدول" aria-label="حذف من الجدول">✕</button></td></tr>';
+    }).join("") : '<tr class="empty"><td colspan="9">لا توجد عمليات مسح بعد</td></tr>';
   }
   async function pollDisplay(first) {
     if (disp.busy) return;
@@ -659,9 +679,10 @@
         const evs = r.body.events || [];
         if (r.body.last_id < disp.after) disp.after = 0;          // feed was reset
         if (evs.length) {
-          disp.history = disp.history.concat(evs).slice(-30);
-          showEvent(evs[evs.length - 1], !first);
-          renderHistory();
+          disp.history = disp.history.concat(evs).slice(-1000);
+          const last = evs[evs.length - 1];
+          if (!first || last.id > disp.start) showEvent(last, !first);
+          renderHistory(first ? null : last.id);
         }
         disp.after = Math.max(disp.after, r.body.last_id || 0);
       }
@@ -674,11 +695,15 @@
   async function openDisplay(channel) {
     disp.channel = (channel || live.channel || "main").trim() || "main";
     disp.after = 0; disp.history = [];
+    disp.ready = false;
+    const sess = loadSession(disp.channel);
+    disp.start = sess.start; disp.removed = sess.removed;
     $("displayChannel").value = disp.channel;
-    $("displayHistory").innerHTML = "";
+    renderHistory();
     show("viewDisplay");
     history.replaceState(null, "", location.pathname + "?display=" + encodeURIComponent(disp.channel));
     await pollDisplay(true);
+    disp.ready = true;
     clearInterval(disp.timer);
     disp.timer = setInterval(() => pollDisplay(false), 1000);
     try { if (navigator.wakeLock) disp.wake = await navigator.wakeLock.request("screen"); } catch (_) {}
@@ -692,11 +717,42 @@
   $("displayOpen").addEventListener("click", () => openDisplay(live.channel));
   $("displayClose").addEventListener("click", () => show("viewScan"));
   $("displayChannel").addEventListener("change", () => openDisplay($("displayChannel").value));
-  $("displayHistory").addEventListener("click", (e) => {
+  $("scanTableBody").addEventListener("click", (e) => {
+    const rm = e.target.closest("[data-rm]");
+    if (rm) { disp.removed.add(+rm.dataset.rm); saveSession(); renderHistory(); return; }
     const row = e.target.closest("[data-ev]");
     if (!row) return;
     const ev = disp.history.find((x) => String(x.id) === row.dataset.ev);
-    if (ev) showEvent(ev, false);
+    if (ev) { showEvent(ev, false); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  });
+  $("newSession").addEventListener("click", () => {
+    if (!disp.ready) { toast("لحظة… جاري تحميل الجدول"); return; }
+    if (sessionRows().length && !confirm("بدء جدول جديد؟ الجدول الحالي هيتمسح من الشاشة (احفظه Excel الأول لو محتاجه).")) return;
+    disp.start = disp.after; disp.removed = new Set(); saveSession(); renderHistory();
+    $("displayBody").innerHTML = '<div class="display-wait"><p>جدول جديد — امسح قطعة من جهاز Honeywell</p></div>';
+  });
+  $("exportExcel").addEventListener("click", async () => {
+    const ids = sessionRows().map((e) => e.id);
+    if (!ids.length) { toast("الجدول فاضي"); return; }
+    const btn = $("exportExcel"); btn.disabled = true; btn.textContent = "جارٍ الحفظ…";
+    try {
+      const res = await fetch(BASE + "/api/live/export", {
+        method: "POST",
+        headers: { "X-Access-Key": state.key, "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ channel: disp.channel, ids }),
+      });
+      if (!res.ok) { let b = {}; try { b = await res.json(); } catch (_) {} toast(b.detail || "تعذر الحفظ"); return; }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)"?/i);
+      const name = m ? decodeURIComponent(m[1]) : "scans.xlsx";
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast("تم حفظ " + ids.length + " صف في ملف Excel");
+    } catch (_) { toast("تعذر الاتصال بالخادم"); }
+    finally { btn.disabled = false; btn.textContent = "حفظ Excel"; }
   });
   document.addEventListener("visibilitychange", async () => {
     if (!document.hidden && state.view === "viewDisplay" && navigator.wakeLock && !disp.wake) {

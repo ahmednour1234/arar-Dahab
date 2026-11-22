@@ -116,8 +116,19 @@
           <p>امسح قطعة من جهاز Honeywell — النتيجة هتظهر هنا تلقائياً</p>
         </div>
       </div>
-      <h3 class="display-hist-title">آخر عمليات المسح</h3>
-      <div id="displayHistory" class="list"></div>
+      <div class="scan-table-head">
+        <h3>جدول المسح <span class="muted small" id="tableSummary"></span></h3>
+        <div class="scan-table-actions">
+          <button type="button" class="btn gold small-btn" id="exportExcel">حفظ Excel</button>
+          <button type="button" class="btn outline small-btn" id="newSession">جدول جديد</button>
+        </div>
+      </div>
+      <div class="scan-table-wrap">
+        <table class="scan-table">
+          <thead><tr><th>#</th><th>الوقت</th><th>الباركود</th><th>القطعة</th><th>العيار</th><th>الوزن</th><th>السعر</th><th>النتيجة</th><th></th></tr></thead>
+          <tbody id="scanTableBody"><tr class="empty"><td colspan="9">لا توجد عمليات مسح بعد</td></tr></tbody>
+        </table>
+      </div>
       <button class="btn outline big" type="button" id="displayClose" style="margin-top:14px">رجوع للماسح</button>
     </section>
 
