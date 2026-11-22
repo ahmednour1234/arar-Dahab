@@ -84,6 +84,11 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
           مسح بكاميرا الجوال
         </button>
+        <label class="btn outline big img-pick">
+          <input type="file" accept="image/*" class="imgInput" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="1.8" fill="currentColor"/><path d="m4 17 5-5 4 4 3-3 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          مسح من صورة (تصوير أو من المعرض)
+        </label>
       </form>
       <p class="error" id="scanError" hidden></p>
 
@@ -163,6 +168,11 @@
       </div>
       <p class="muted center small" id="camHint">وجّه الكاميرا نحو الباركود — سيتم البحث تلقائياً</p>
       <p class="error" id="camError" hidden></p>
+      <label class="btn outline big img-pick cam-img">
+          <input type="file" accept="image/*" class="imgInput" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="10" r="1.8" fill="currentColor"/><path d="m4 17 5-5 4 4 3-3 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          مسح من صورة (تصوير أو من المعرض)
+        </label>
       <button class="btn outline big" type="button" id="camClose">إلغاء</button>
     </section>
 

@@ -173,10 +173,7 @@
     show("viewLoading");
     try {
       const fid = $("scanFilter").value;
-      const qs = [];
-      if (fid) qs.push("file=" + encodeURIComponent(fid));
-      if (live.send) qs.push("live=" + encodeURIComponent(live.channel || "main") + "&device=" + encodeURIComponent(live.device || ""));
-      const r = await api("/api/item/" + encodeURIComponent(code) + (qs.length ? "?" + qs.join("&") : ""));
+      const r = await api(itemUrl(code, fid));
       state.online = true;
       if (r.status === 401) { askKey(true); return; }
       renderResult(r.status, r.body || {}, code);
@@ -204,6 +201,13 @@
     if (body.data_state === "stale")
       return '<p class="stale-note">⚠ قد تكون هذه البيانات غير محدثة — آخر تحميل ناجح لملف Excel: ' + esc(fmtTime(body.last_success)) + "</p>";
     return "";
+  }
+
+  function itemUrl(code, fid) {
+    const qs = [];
+    if (fid) qs.push("file=" + encodeURIComponent(fid));
+    if (live.send) qs.push("live=" + encodeURIComponent(live.channel || "main") + "&device=" + encodeURIComponent(live.device || ""));
+    return "/api/item/" + encodeURIComponent(code) + (qs.length ? "?" + qs.join("&") : "");
   }
 
   function buildResultHtml(status, body, code) {
@@ -348,7 +352,7 @@
       }
       if (native) {
         cam.stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, focusMode: { ideal: "continuous" } }, audio: false });
         video.srcObject = cam.stream;
         await video.play();
         const tick = async () => {
@@ -361,15 +365,47 @@
         };
         tick();
       } else if (window.ZXing) {
+        // ZXing (iPhone / browsers without BarcodeDetector): our own frame loop that finds the bars,
+        // crops tightly around them (background confuses the decoder) and decodes the crop.
+        const Z = window.ZXing;
         const hints = new Map();
-        hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
-        const BF = window.ZXing.BarcodeFormat;
-        hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS,
-          [BF.CODE_128, BF.CODE_39, BF.CODE_93, BF.EAN_13, BF.EAN_8, BF.UPC_A, BF.UPC_E, BF.QR_CODE]);
-        cam.reader = new window.ZXing.BrowserMultiFormatReader(hints, 150);
-        await cam.reader.decodeFromConstraints(
-          { video: { facingMode: { ideal: "environment" } }, audio: false }, video,
-          (result) => { if (result) onCameraCode(result.getText()); });
+        hints.set(Z.DecodeHintType.TRY_HARDER, true);
+        hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,
+          [Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.CODE_93, Z.BarcodeFormat.EAN_13,
+           Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E, Z.BarcodeFormat.QR_CODE]);
+        const mf = new Z.MultiFormatReader();
+        mf.setHints(hints);
+        const decodeCanvas = (cv) => {
+          try {
+            const bmp = new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cv)));
+            return mf.decodeWithState(bmp).getText();
+          } catch (_) { return null; } finally { try { mf.reset(); } catch (_) {} }
+        };
+        cam.stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, focusMode: { ideal: "continuous" } }, audio: false });
+        video.srcObject = cam.stream;
+        await video.play();
+        const tick = () => {
+          if (cam.done || !cam.stream) return;
+          const vw = video.videoWidth, vh = video.videoHeight;
+          if (vw && vh) {
+            // the area inside the gold frame first, then the whole frame
+            const areas = [[vw * 0.05, vh * 0.2, vw * 0.9, vh * 0.6], [0, 0, vw, vh]];
+            for (const [ax, ay, aw, ah] of areas) {
+              const base = toCanvas(video, ax, ay, aw, ah, 1280);
+              const bars = findBars(base);
+              let text = null;
+              if (bars) {
+                const k = aw / base.width;
+                text = decodeCanvas(toCanvas(video, ax + bars.x * k, ay + bars.y * k, bars.w * k, bars.h * k, 1280, 640));
+              }
+              if (!text) text = decodeCanvas(base);
+              if (text) { onCameraCode(text); if (cam.done) return; break; }
+            }
+          }
+          cam.timer = setTimeout(tick, 150);
+        };
+        tick();
       } else {
         camFail("مكتبة قراءة الباركود غير محمّلة.");
       }
@@ -443,6 +479,246 @@
       $("uploadBtn").disabled = false;
       $("uploadBtn").textContent = "رفع وتحديث البيانات";
     }
+  });
+
+  // ---------- scan barcodes from a photo (camera shot or gallery) ----------
+  const IMG_FORMATS = ["code_128", "code_39", "code_93", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"];
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve({ img, url });
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("bad image")); };
+      img.src = url;
+    });
+  }
+  function toCanvas(img, sx, sy, sw, sh, maxSide, minSide) {
+    let scale = Math.min(1, maxSide / Math.max(sw, sh));
+    if (minSide && Math.max(sw, sh) * scale < minSide) scale = Math.min(4, minSide / Math.max(sw, sh)); // enlarge small crops
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(sw * scale)); c.height = Math.max(1, Math.round(sh * scale));
+    const g = c.getContext("2d");
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    g.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c;
+  }
+  // grayscale + contrast stretch: helps on dim / low-contrast photos
+  function enhance(canvas) {
+    const g = canvas.getContext("2d");
+    const d = g.getImageData(0, 0, canvas.width, canvas.height), a = d.data;
+    let lo = 255, hi = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      const v = (a[i] * 299 + a[i + 1] * 587 + a[i + 2] * 114) / 1000;
+      a[i] = v; if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+    const k = hi > lo ? 255 / (hi - lo) : 1;
+    for (let i = 0; i < a.length; i += 4) { const v = (a[i] - lo) * k; a[i] = a[i + 1] = a[i + 2] = v; }
+    g.putImageData(d, 0, 0);
+    return canvas;
+  }
+  // Find bright, low-saturation areas (labels / paper) and return their boxes in image coordinates.
+  function findLabelRegions(img) {
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const s = Math.min(1, 700 / Math.max(W, H));
+    const c = toCanvas(img, 0, 0, W, H, 700);
+    const w = c.width, h = c.height, a = c.getContext("2d").getImageData(0, 0, w, h).data;
+    const mask = new Uint8Array(w * h);
+    for (let i = 0, j = 0; j < w * h; i += 4, j++) {
+      const r = a[i], g2 = a[i + 1], b = a[i + 2], mx = Math.max(r, g2, b), mn = Math.min(r, g2, b);
+      mask[j] = mx > 170 && mx - mn < 45 ? 1 : 0;
+    }
+    const seen = new Uint8Array(w * h), boxes = [], stack = [];
+    for (let j = 0; j < w * h; j++) {
+      if (!mask[j] || seen[j]) continue;
+      let x0 = w, y0 = h, x1 = 0, y1 = 0, n = 0;
+      stack.push(j); seen[j] = 1;
+      while (stack.length) {
+        const q = stack.pop(), x = q % w, y = (q / w) | 0; n++;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        const nb = [q - 1, q + 1, q - w, q + w];
+        for (const t of nb) if (t >= 0 && t < w * h && !seen[t] && mask[t] && Math.abs((t % w) - x) <= 1) { seen[t] = 1; stack.push(t); }
+      }
+      const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+      if (n < w * h * 0.0004 || bw < 8 || bh < 6) continue;          // too small
+      if (bw * bh > w * h * 0.9) continue;                            // the whole picture
+      const m = 0.12;                                                 // margin around the label
+      boxes.push({ x: Math.max(0, (x0 - bw * m) / s), y: Math.max(0, (y0 - bh * m) / s),
+                   w: Math.min(W, (bw * (1 + 2 * m)) / s), h: Math.min(H, (bh * (1 + 2 * m)) / s), n });
+    }
+    return boxes.sort((p, q) => q.n - p.n).slice(0, 40);
+  }
+  // Locate the barcode bars inside a canvas: rows with many sharp light/dark transitions.
+  function findBars(cv) {
+    const w = cv.width, h = cv.height;
+    if (w < 40 || h < 20) return null;
+    const a = cv.getContext("2d").getImageData(0, 0, w, h).data;
+    const lum = new Float32Array(w * h);
+    for (let i = 0, j = 0; j < w * h; i += 4, j++) lum[j] = (a[i] * 299 + a[i + 1] * 587 + a[i + 2] * 114) / 1000;
+    const rowCount = new Int32Array(h), colHits = new Int32Array(w);
+    const edge = (y, x) => Math.abs(lum[y * w + x + 1] - lum[y * w + x - 1]) > 40;
+    for (let y = 0; y < h; y++) {
+      let n = 0, prev = false;
+      for (let x = 1; x < w - 1; x++) { const e = edge(y, x); if (e && !prev) n++; prev = e; }
+      rowCount[y] = n;
+    }
+    let best = 0; for (let y = 0; y < h; y++) if (rowCount[y] > best) best = rowCount[y];
+    if (best < 10) return null;
+    // longest run of rows with at least 55% of the best transition count
+    let y0 = -1, y1 = -1, s0 = -1;
+    for (let y = 0; y <= h; y++) {
+      const on = y < h && rowCount[y] >= best * 0.55;
+      if (on && s0 < 0) s0 = y;
+      if (!on && s0 >= 0) { if (y - s0 > y1 - y0) { y0 = s0; y1 = y; } s0 = -1; }
+    }
+    if (y1 - y0 < 4) return null;
+    for (let y = y0; y < y1; y++) for (let x = 1; x < w - 1; x++) if (edge(y, x)) colHits[x]++;
+    // smooth column hits, then take the longest dense run (the bars). Isolated label borders are separate runs.
+    const win = Math.max(6, Math.round(w * 0.025)), need = (y1 - y0) * 0.3;
+    const dense = new Uint8Array(w);
+    let acc = 0;
+    for (let x = 0; x < w; x++) {
+      acc += colHits[x] >= need ? 1 : 0;
+      if (x >= win) acc -= colHits[x - win] >= need ? 1 : 0;
+      if (acc > 0) for (let k = Math.max(0, x - win + 1); k <= x; k++) dense[k] = 1;
+    }
+    let x0 = -1, x1 = -1, r0 = -1;
+    for (let x = 0; x <= w; x++) {
+      const on = x < w && dense[x];
+      if (on && r0 < 0) r0 = x;
+      if (!on && r0 >= 0) {
+        // count edges in the run: the bars have many, a label border has few
+        let e = 0; for (let k = r0; k < x; k++) if (colHits[k] >= need) e++;
+        if (e >= 8 && x - r0 > x1 - x0) { x0 = r0; x1 = x; }
+        r0 = -1;
+      }
+    }
+    if (x0 < 0 || x1 - x0 < 20) return null;
+    const bw = x1 - x0, bh = y1 - y0;
+    const padX = bw * 0.08, padY = bh * 0.15;
+    return { x: Math.max(0, x0 - padX), y: Math.max(0, y0 - padY), w: Math.min(w, bw + 2 * padX), h: Math.min(h, bh + 2 * padY) };
+  }
+  async function decodeWithZXing(canvas, reader) {
+    try { const r = await reader.decodeFromImageUrl(canvas.toDataURL("image/png")); return r ? [r.getText()] : []; }
+    catch (_) { return []; }
+  }
+  // Returns every distinct barcode found in the image.
+  async function decodeImage(file) {
+    const { img, url } = await loadImage(file);
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const found = new Set();
+    const add = (t) => { const c = cleanCode(t); if (c) found.add(c); };
+    try {
+      const regions = findLabelRegions(img);
+      let det = null, reader = null;
+      if ("BarcodeDetector" in window) {
+        try {
+          const sup = await window.BarcodeDetector.getSupportedFormats();
+          det = new window.BarcodeDetector({ formats: IMG_FORMATS.filter((f) => sup.includes(f)) });
+        } catch (_) { det = null; }
+      }
+      if (window.ZXing) {
+        const hints = new Map();
+        hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+        const BF = window.ZXing.BarcodeFormat;
+        hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS,
+          [BF.CODE_128, BF.CODE_39, BF.CODE_93, BF.EAN_13, BF.EAN_8, BF.UPC_A, BF.UPC_E, BF.QR_CODE]);
+        reader = new window.ZXing.BrowserMultiFormatReader(hints);
+      }
+      const tryCanvas = async (cv) => {
+        if (det) { try { (await det.detect(cv)).forEach((c) => add(c.rawValue)); } catch (_) {} }
+        if (reader) (await decodeWithZXing(cv, reader)).forEach(add);
+      };
+      // 1) whole picture (native detector can find several codes at once)
+      if (det) for (const maxSide of [2400, 1400]) { await tryCanvas(toCanvas(img, 0, 0, W, H, maxSide)); if (found.size) break; }
+      // 2) every label / paper area: cropped, enlarged, contrast-enhanced
+      for (const r of regions) {
+        const before = found.size;
+        const rc = toCanvas(img, r.x, r.y, r.w, r.h, 1600, 900);
+        const nat = toCanvas(img, r.x, r.y, r.w, r.h, 1200);
+        const bars = findBars(nat);
+        if (bars) {
+          const k = r.w / nat.width;  // canvas -> image scale
+          const bx = r.x + bars.x * k, by = r.y + bars.y * k, bw = bars.w * k, bh = bars.h * k;
+          await tryCanvas(toCanvas(img, bx, by, bw, bh, 1600, 700));
+          if (found.size === before) await tryCanvas(enhance(toCanvas(img, bx, by, bw, bh, 1600, 900)));
+        }
+        if (found.size === before) await tryCanvas(rc);
+        if (found.size === before) await tryCanvas(enhance(toCanvas(img, r.x, r.y, r.w, r.h, 1600, 1200)));
+        // text above/below the bars can confuse the decoder: try overlapping horizontal strips of the label
+        if (found.size === before) {
+          for (const frac of [0.4, 0.28]) {
+            for (let t = 0; t + frac <= 1.001 && found.size === before; t += frac / 2) {
+              await tryCanvas(toCanvas(img, r.x, r.y + r.h * t, r.w, r.h * frac, 1600, 700));
+            }
+          }
+        }
+      }
+      // 3) nothing yet: whole picture at several sizes, then overlapping tiles
+      if (!found.size && reader) {
+        for (const maxSide of [1600, 2400, 1000]) { (await decodeWithZXing(toCanvas(img, 0, 0, W, H, maxSide), reader)).forEach(add); if (found.size) break; }
+        if (!found.size) for (const n of [2, 3]) {
+          const tw = W / n, th = H / n;
+          for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+            const sx = Math.max(0, x * tw - tw * 0.2), sy = Math.max(0, y * th - th * 0.2);
+            const sw = Math.min(W - sx, tw * 1.4), sh = Math.min(H - sy, th * 1.4);
+            (await decodeWithZXing(toCanvas(img, sx, sy, sw, sh, 1400), reader)).forEach(add);
+            for (let t = 0; t < 1; t += 0.25) (await decodeWithZXing(toCanvas(img, sx, sy + sh * t, sw, sh * 0.35, 1400), reader)).forEach(add);
+          }
+        }
+      }
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+    return { codes: [...found].filter((c) => c && c.length <= 64), url };
+  }
+
+  async function scanImageFile(file) {
+    if (!file) return;
+    stopCamera();
+    show("viewLoading");
+    let res;
+    try { res = await decodeImage(file); }
+    catch (_) { res = { codes: [], url: "" }; }
+    const codes = res.codes;
+    if (!codes.length) {
+      $("resultBody").innerHTML = '<div class="msg nf">' + ICON_NF + "<h2>لم يتم العثور على باركود في الصورة</h2>" +
+        (res.url ? '<img class="img-preview" src="' + res.url + '" alt="">' : "") +
+        '<p class="muted">قرّب الكاميرا من الباركود، وخلّي الصورة واضحة ومنوّرة ومن غير انعكاس، والباركود كله جوه الصورة.</p></div>';
+      show("viewResult");
+      return;
+    }
+    if (codes.length === 1) { search(codes[0]); return; }
+    // several barcodes: look all of them up and list them
+    const fid = $("scanFilter").value;
+    const rows = await Promise.all(codes.slice(0, 40).map(async (code) => {
+      try { const r = await api(itemUrl(code, fid)); return { code, status: r.status, body: r.body || {} }; }
+      catch (_) { return { code, status: 0, body: {} }; }
+    }));
+    const ok = rows.filter((r) => r.status === 200).length;
+    $("resultBody").innerHTML =
+      '<div class="multi-head">' + (res.url ? '<img class="img-preview" src="' + res.url + '" alt="">' : "") +
+      "<h2>تم العثور على " + rows.length + " باركود في الصورة</h2><p class=\"muted small\">" + ok + " موجودة في المخزون — اضغط على أي قطعة لعرض تفاصيلها</p></div>" +
+      '<div class="list multi-list">' + rows.map((r) => {
+        const f = (r.body.item && r.body.item.fields) || {};
+        const res2 = r.status === 200 ? '<span class="badge ok">موجودة</span>' : r.status === 404 ? '<span class="badge">غير موجودة</span>' : r.status === 409 ? '<span class="badge err">مكرر</span>' : '<span class="badge err">خطأ</span>';
+        return '<div class="li' + (r.status === 409 ? " dup" : "") + '" data-code="' + esc(r.code) + '"><div class="main"><div class="bc">' + esc(r.code) + "</div>" +
+          '<div class="nm">' + esc(f.item_name || "") + "</div>" +
+          '<div class="meta">' + [f.karat && "عيار " + esc(f.karat), f.weight && fmtNum(f.weight) + " جم", f.price && fmtNum(f.price) + " ر.س"].filter(Boolean).join(" • ") + "</div></div>" +
+          '<div class="res">' + res2 + "</div></div>";
+      }).join("") + "</div>" +
+      '<div class="copy-row"><button type="button" class="btn outline small-btn" id="copyImgCodes">نسخ كل الباركودات</button></div>';
+    state.lastImageCodes = rows.map((r) => r.code);
+    show("viewResult");
+  }
+  document.querySelectorAll(".imgInput").forEach((inp) => inp.addEventListener("change", () => {
+    const f = inp.files && inp.files[0];
+    inp.value = "";
+    scanImageFile(f);
+  }));
+  $("resultBody").addEventListener("click", (e) => {
+    if (e.target.closest("#copyImgCodes")) { copyText((state.lastImageCodes || []).join("\n"), "تم نسخ الباركودات"); return; }
+    const row = e.target.closest(".multi-list [data-code]");
+    if (row) search(row.dataset.code);
   });
 
   // ---------- copy / paste ----------

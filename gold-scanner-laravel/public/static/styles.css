@@ -276,3 +276,11 @@ body.is-display main { max-width: 1100px; }
 @keyframes rowflash { from { background: rgba(212,175,55,.25); } to { background: transparent; } }
 .scan-table .rm { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 2px 6px; border-radius: 6px; }
 .scan-table .rm:hover { color: var(--err); background: rgba(239,83,80,.1); }
+
+/* ---------- scan from image ---------- */
+.img-pick { cursor: pointer; }
+.cam-img { margin-top: 12px; }
+.multi-head { text-align: center; margin-bottom: 12px; }
+.multi-head h2 { margin: 6px 0; font-size: 1.25rem; }
+.multi-list .li .res { flex: none; font-size: .82rem; }
+.img-preview { display: block; max-width: 100%; max-height: 220px; margin: 0 auto 12px; border-radius: 10px; border: 1px solid var(--line); }
