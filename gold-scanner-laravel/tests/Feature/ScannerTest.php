@@ -324,6 +324,36 @@ class ScannerTest extends TestCase
         $this->artisan('gold:find', ['barcode' => '001090'])->expectsOutputToContain('FOUND (exact)')->assertExitCode(0);
     }
 
+    public function test_old_index_is_rebuilt_and_any_hidden_char_is_removed(): void
+    {
+        // cells with many kinds of invisible characters and Arabic-Indic digits
+        $dirty = ["\u{200E}001090", "001091\u{00AD}", "\t001092 ", "\u{202B}001093\u{202C}", "٠٠١٠٩٤", "00\u{2009}1095", "001096\u{FEFF}"];
+        $book = new Spreadsheet;
+        $sh = $book->getActiveSheet();
+        $sh->setCellValue('A1', 'البا ركود')->setCellValue('B1', 'البيان');
+        foreach ($dirty as $i => $code) {
+            $sh->setCellValueExplicit([1, $i + 2], $code, DataType::TYPE_STRING);
+            $sh->setCellValue([2, $i + 2], 'قطعة '.$i);
+        }
+        unlink($this->dir.'/files/inventory.xls');
+        IOFactory::createWriter($book, 'Xlsx')->save($this->dir.'/files/client.xlsx');
+
+        // first load, then fake an index written by an OLD parser version with a dirty key
+        $this->getJson('/api/item/001090', $this->h)->assertOk();
+        $idx = glob($this->dir.'/index/*.json')[0];
+        $j = json_decode(file_get_contents($idx), true);
+        $j['records'] = ["001090\u{200F}" => $j['records']['001090']];
+        unset($j['parser']);
+        file_put_contents($idx, json_encode($j, JSON_UNESCAPED_UNICODE));
+
+        // a fresh request (new store, like PHP-FPM on the server) rebuilds the outdated index automatically
+        $fresh = new InventoryStore(config('goldscanner'), $this->dir);
+        $keys = array_keys($fresh->combined()['records']);
+        sort($keys);
+        $this->assertSame(['001090', '001091', '001092', '001093', '001094', '001095', '001096'], $keys);
+        $this->assertSame(InventoryParser::VERSION, json_decode(file_get_contents($idx), true)['parser']);
+    }
+
     public function test_header_normalization(): void
     {
         $n = fn ($s) => InventoryParser::normHeader($s);

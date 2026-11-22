@@ -69,6 +69,9 @@ Artisan::command('gold:find {barcode}', function (InventoryStore $store, string 
         }
         $near = array_slice(array_filter(array_keys($s['records']), fn ($k) => str_contains((string) $k, ltrim($key, '0'))), 0, 5);
         $this->warn('  NOT in this file.'.($near ? ' Similar barcodes: '.implode(', ', $near) : ''));
+        foreach ($near as $k) {
+            $this->line('    "'.$k.'" bytes: '.bin2hex((string) $k).'  (parser v'.($s['parser'] ?? 'old').') -> run: php artisan gold:reload');
+        }
     }
 
     return 0;

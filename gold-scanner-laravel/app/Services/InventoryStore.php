@@ -158,7 +158,10 @@ class InventoryStore
             $sig = $this->signature($path);
             $known = $snaps[$id]['source'] ?? null;
             $failed = $st['files'][$id]['failed_source'] ?? null;
-            if ($known != $sig && $failed != $sig) {
+            $outdated = isset($snaps[$id]) && ($snaps[$id]['parser'] ?? 0) !== InventoryParser::VERSION;
+            if ($outdated) {
+                $this->reloadFile($id, $path, 'upgrade');      // parsing rules changed -> rebuild index
+            } elseif ($known != $sig && $failed != $sig) {
                 $this->reloadFile($id, $path, 'change');
             }
         }
@@ -187,7 +190,8 @@ class InventoryStore
             $idxPath = $this->dir.'/index/'.$id.'.json';
             $old = $this->readJson($idxPath);
             $sig = is_file($path) ? $this->signature($path) : null;
-            if ($sig && ($old['source'] ?? null) == $sig && $reason === 'change') {
+            if ($sig && ($old['source'] ?? null) == $sig && $reason === 'change'
+                && ($old['parser'] ?? 0) === InventoryParser::VERSION) {
                 $this->snapshots[$id] = $old;      // another request already reloaded it
 
                 return true;

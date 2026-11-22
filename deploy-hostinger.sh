@@ -42,6 +42,9 @@ if ! ls storage/app/private/inventory/files/*.xls* >/dev/null 2>&1 \
   php artisan gold:demo || true
 fi
 
+echo "==> Re-reading all Excel files with the new code"
+php artisan gold:reload || true
+
 echo "==> Status"
 php artisan gold:status
 echo "Done."

@@ -13,6 +13,9 @@ use Throwable;
  */
 class InventoryParser
 {
+    /** Bump when parsing rules change: stored indexes with another version are re-parsed automatically. */
+    public const VERSION = 3;
+
     public function __construct(private array $cfg)
     {
     }
@@ -20,7 +23,10 @@ class InventoryParser
     /** Remove spaces and invisible characters (NBSP, zero-width, BOM, RTL/LTR marks) from a barcode. */
     public static function cleanBarcode(string $s): string
     {
-        return (string) preg_replace('/[\s\x{00A0}\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}\x{FEFF}\x{0640}]+/u', '', $s);
+        $s = (string) preg_replace('/[\p{Z}\p{C}\s\x{0640}]+/u', '', $s);
+        // Arabic-Indic / Persian digits -> ASCII (some systems export ٠١٢٣)
+        return strtr($s, ['٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+            '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4', '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9']);
     }
 
     public static function normalizeKey(string $barcode, bool $caseInsensitive = true): string
@@ -225,6 +231,7 @@ class InventoryParser
             'total_rows' => $total,
             'sheets' => $sheetsUsed,
             'sheet_info' => $sheetInfo,
+            'parser' => self::VERSION,
             'warnings' => $warnings,
             'fingerprint' => $fingerprint,
         ];
