@@ -7,7 +7,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>ماسح الذهب</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23d4af37' d='M6 3h12l4 6-10 12L2 9z'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="{{ asset('static/styles.css') }}">
+  <link rel="stylesheet" href="{{ asset('static/styles.css') }}?v={{ filemtime(public_path('static/styles.css')) }}">
 </head>
 <body>
   <header class="topbar">
@@ -126,11 +126,11 @@
     <section class="view" id="viewUpload" hidden>
       <div class="card">
         <h2 class="center">رفع ملف المخزون</h2>
-        <p class="muted small">ارفع ملف Excel بصيغة <b dir="ltr">.xls</b> أو <b dir="ltr">.xlsx</b>. يمكنك رفع أكثر من ملف، والبحث يشمل كل الملفات. يتم فحص الملف قبل حفظه، وإذا رفعت ملفاً بنفس الاسم يحل محل القديم مع حفظ نسخة احتياطية.</p>
+        <p class="muted small">ارفع ملف Excel بصيغة <b dir="ltr">.xls</b> أو <b dir="ltr">.xlsx</b> أو <b dir="ltr">.csv</b>. يمكنك رفع أكثر من ملف، والبحث يشمل كل الملفات. يتم فحص الملف قبل حفظه، وإذا رفعت ملفاً بنفس الاسم يحل محل القديم مع حفظ نسخة احتياطية.</p>
         <form id="uploadForm" class="scan-form">
           <label class="file-pick" id="filePick">
-            <input type="file" id="fileInput" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-            <span id="fileName">اضغط لاختيار ملف Excel (.xls أو .xlsx)</span>
+            <input type="file" id="fileInput" accept=".xls,.xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+            <span id="fileName">اضغط لاختيار ملف Excel أو CSV</span>
           </label>
           <input id="adminKey" type="password" autocomplete="off" placeholder="مفتاح المسؤول" dir="ltr">
           <button class="btn gold big" type="submit" id="uploadBtn">رفع وتحديث البيانات</button>
@@ -162,6 +162,6 @@
   <footer class="foot">البيانات من آخر ملف Excel تم تحميله على الخادم</footer>
   <script>window.GS_BASE = @json(rtrim(url('/'), '/'));</script>
   <script src="{{ asset('static/vendor/zxing.min.js') }}" defer></script>
-  <script src="{{ asset('static/app.js') }}"></script>
+  <script src="{{ asset('static/app.js') }}?v={{ filemtime(public_path('static/app.js')) }}"></script>
 </body>
 </html>

@@ -385,7 +385,7 @@
   $("uploadClose").addEventListener("click", () => show("viewScan"));
   $("fileInput").addEventListener("change", () => {
     const f = $("fileInput").files[0];
-    $("fileName").textContent = f ? f.name + " (" + (f.size / 1024).toFixed(0) + " KB)" : "اضغط لاختيار ملف Excel (.xls أو .xlsx)";
+    $("fileName").textContent = f ? f.name + " (" + (f.size / 1024).toFixed(0) + " KB)" : "اضغط لاختيار ملف Excel أو CSV";
     $("filePick").classList.toggle("has", !!f);
   });
   $("uploadForm").addEventListener("submit", async (e) => {
@@ -394,7 +394,7 @@
     const msg = $("uploadMsg");
     const say = (ok, html) => { msg.className = ok ? "up-ok" : "up-err"; msg.innerHTML = html; msg.hidden = false; };
     if (!f) return say(false, "اختر ملف Excel أولاً.");
-    if (!/\.xlsx?$/i.test(f.name)) return say(false, "الملف يجب أن يكون بصيغة <b dir=\"ltr\">.xls</b> أو <b dir=\"ltr\">.xlsx</b>.");
+    if (!/\.(xlsx?|csv)$/i.test(f.name)) return say(false, "الملف يجب أن يكون بصيغة <b dir=\"ltr\">.xls</b> أو <b dir=\"ltr\">.xlsx</b> أو <b dir=\"ltr\">.csv</b>.");
     const admin = $("adminKey").value.trim();
     if (!admin) return say(false, "أدخل مفتاح المسؤول.");
     $("uploadBtn").disabled = true;
@@ -412,7 +412,7 @@
         let html = "✔ " + (body.file && body.file.replaced ? "تم تحديث الملف " : "تمت إضافة الملف ") + "<b>" + esc(body.file ? body.file.name : f.name) + "</b> بنجاح.<br>عدد القطع في الملف: <b>" + esc(body.records) + "</b>";
         if (body.duplicate_barcodes) html += "<br>⚠ يوجد " + esc(body.duplicate_barcodes) + " باركود مكرر في الملف.";
         say(true, html);
-        $("fileInput").value = ""; $("fileName").textContent = "اضغط لاختيار ملف Excel (.xls أو .xlsx)"; $("filePick").classList.remove("has");
+        $("fileInput").value = ""; $("fileName").textContent = "اضغط لاختيار ملف Excel أو CSV"; $("filePick").classList.remove("has");
         pollHealth(); loadDemo(); loadFiles();
       } else {
         say(false, "✖ لم يتم رفع الملف: " + esc(body.detail || ("خطأ " + res.status)) + "<br>البيانات الحالية لم تتغير.");

@@ -203,6 +203,33 @@ class ScannerTest extends TestCase
         $this->assertSame($main['id'], $this->getJson('/api/files', $this->h)->json('files.0.id'));
     }
 
+    public function test_csv_utf8_bom_and_windows_1256(): void
+    {
+        $p = new InventoryParser(config('goldscanner'));
+        // UTF-8 with BOM, comma separated, leading zeros kept
+        file_put_contents($f1 = $this->dir.'/a.csv', "\xEF\xBB\xBF"."Barcode,Item Name,Karat,Weight,Price\n00777,خاتم ذهب,21,3.5,1200\n6280009999,سلسلة,18,8,2650\n");
+        $s = $p->parseFile($f1);
+        $this->assertSame('خاتم ذهب', $s['records']['00777'][0]['fields']['item_name']);
+        $this->assertSame('6280009999', $s['records']['6280009999'][0]['fields']['barcode']);
+        // Arabic Excel "CSV" saved as Windows-1256 with ; separator and Arabic headers
+        $csv = iconv('UTF-8', 'CP1256', "الباركود;اسم القطعة;العيار\n0042;حلق ذهب;21\n");
+        file_put_contents($f2 = $this->dir.'/b.csv', $csv);
+        $s2 = $p->parseFile($f2);
+        $this->assertSame('حلق ذهب', $s2['records']['0042'][0]['fields']['item_name']);
+    }
+
+    public function test_csv_upload(): void
+    {
+        $csv = "Barcode,Item Name,Price\nCSV-1,قطعة من CSV,99\n";
+        $r = $this->call('POST', '/api/admin/upload', [], [], [],
+            $this->server(['X-Admin-Key' => 'adm', 'X-Filename' => rawurlencode('فرع.csv')]), $csv);
+        $r->assertOk()->assertJsonPath('file.name', 'فرع.csv');
+        $this->getJson('/api/item/CSV-1', $this->h)->assertOk()->assertJsonPath('item.fields.price', '99');
+        // a text file without .csv name is still rejected
+        $this->call('POST', '/api/admin/upload', [], [], [], $this->server(['X-Admin-Key' => 'adm', 'X-Filename' => 'x.txt']), $csv)
+            ->assertStatus(400);
+    }
+
     public function test_upload_rejections_keep_current_file(): void
     {
         $before = file_get_contents($this->dir.'/files/inventory.xls');

@@ -149,8 +149,10 @@ class ScannerController extends Controller
             $ext = 'xls';
         } elseif (str_starts_with($data, "PK\x03\x04")) {
             $ext = 'xlsx';
+        } elseif (preg_match('/\.csv$/i', rawurldecode((string) $request->header('X-Filename', ''))) && ! str_contains($data, "\0")) {
+            $ext = 'csv';
         } else {
-            return response()->json(['detail' => 'الملف ليس ملف Excel صالحاً (.xls أو .xlsx)'], 400);
+            return response()->json(['detail' => 'الملف ليس ملف Excel أو CSV صالحاً (.xls أو .xlsx أو .csv)'], 400);
         }
 
         $tmp = tempnam(sys_get_temp_dir(), 'gs');

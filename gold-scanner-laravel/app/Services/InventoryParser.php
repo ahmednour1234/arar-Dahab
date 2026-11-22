@@ -75,7 +75,14 @@ class InventoryParser
             throw new InventoryReadException('ملف Excel غير موجود أو فارغ');
         }
         try {
-            $reader = IOFactory::createReaderForFile($path);
+            if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'csv') {
+                // CSV: guess delimiter; encoding UTF-8 (with/without BOM) or Arabic Windows-1256
+                $reader = new \PhpOffice\PhpSpreadsheet\Reader\Csv;
+                $reader->setInputEncoding(\PhpOffice\PhpSpreadsheet\Reader\Csv::GUESS_ENCODING);
+                $reader->setFallbackEncoding('CP1256');
+            } else {
+                $reader = IOFactory::createReaderForFile($path);
+            }
             $reader->setReadDataOnly(true);
             $book = $reader->load($path);
         } catch (Throwable $e) {

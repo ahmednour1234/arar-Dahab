@@ -52,7 +52,7 @@ function Get-WatchedFiles {
         $p = [Environment]::ExpandEnvironmentVariables([string]$entry)
         if (Test-Path -LiteralPath $p -PathType Container) {
             $out += Get-ChildItem -LiteralPath $p -File | Where-Object {
-                $_.Extension -match '^\.xlsx?$' -and -not $_.Name.StartsWith('~$') -and -not $_.Name.StartsWith('.')
+                $_.Extension -match '^\.(xlsx?|csv)$' -and -not $_.Name.StartsWith('~$') -and -not $_.Name.StartsWith('.')
             } | ForEach-Object { $_.FullName }
         } elseif (Test-Path -LiteralPath $p -PathType Leaf) {
             $out += (Get-Item -LiteralPath $p).FullName

@@ -20,7 +20,7 @@ class InventoryStore
 
     private ?array $status = null;
 
-    private const EXTS = ['xls', 'xlsx'];
+    private const EXTS = ['xls', 'xlsx', 'csv'];
 
     public function __construct(private array $cfg, private ?string $dir = null)
     {
