@@ -7,7 +7,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>ماسح الذهب</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23d4af37' d='M6 3h12l4 6-10 12L2 9z'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="{{ asset('static/styles.css') }}">
 </head>
 <body>
   <header class="topbar">
@@ -123,7 +123,8 @@
   </main>
 
   <footer class="foot">البيانات من آخر ملف Excel تم تحميله على الخادم</footer>
-  <script src="/static/vendor/zxing.min.js" defer></script>
-  <script src="/static/app.js"></script>
+  <script>window.GS_BASE = @json(rtrim(url('/'), '/'));</script>
+  <script src="{{ asset('static/vendor/zxing.min.js') }}" defer></script>
+  <script src="{{ asset('static/app.js') }}"></script>
 </body>
 </html>

@@ -3,6 +3,8 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
+  // Base URL so the app also works from a sub-folder (e.g. https://host/public/)
+  const BASE = String(window.GS_BASE || "").replace(/\/$/, "");
   const KEY_STORE = "goldScanner.accessKey";
   const state = {
     cfg: null,
@@ -42,7 +44,7 @@
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), opts.timeout || 8000);
     try {
-      const res = await fetch(path, {
+      const res = await fetch(BASE + path, {
         headers: state.key ? { "X-Access-Key": state.key } : {},
         cache: "no-store",
         signal: ctrl.signal,
@@ -389,7 +391,7 @@
     $("uploadBtn").disabled = true;
     $("uploadBtn").textContent = "جارٍ الرفع والفحص…";
     try {
-      const res = await fetch("/api/admin/upload", {
+      const res = await fetch(BASE + "/api/admin/upload", {
         method: "POST",
         headers: { "X-Access-Key": state.key, "X-Admin-Key": admin, "Content-Type": "application/octet-stream" },
         body: f,

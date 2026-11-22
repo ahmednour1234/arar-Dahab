@@ -1,0 +1,17 @@
+# Used only when the domain's document root is the project folder instead of public/.
+# Best practice is still to point the document root at public/.
+
+# Never serve hidden files (.env, .git, ...)
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Block direct access to app internals
+    RewriteRule ^(app|bootstrap|config|database|resources|routes|storage|tests|vendor)(/|$) - [F,L]
+    RewriteRule ^(composer\.(json|lock)|artisan|phpunit\.xml|package\.json|vite\.config\.js|README\.md)$ - [F,L]
+    # Send everything else into public/
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
