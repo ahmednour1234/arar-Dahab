@@ -1059,7 +1059,7 @@
     disp.wake = null;
     history.replaceState(null, "", location.pathname);
   }
-  $("displayOpen").addEventListener("click", () => openDisplay(live.channel));
+  $("displayOpen").addEventListener("click", () => { openDisplay(live.channel); loadFiles(); loadCounts(); });
   $("displayClose").addEventListener("click", () => show("viewScan"));
   $("displayChannel").addEventListener("change", () => openDisplay($("displayChannel").value));
   $("scanTableBody").addEventListener("click", (e) => {
@@ -1105,6 +1105,112 @@
     }
   });
 
+  // ---------- stock counts (جرد): save on the system, as a standalone Excel or as sheets inside the inventory file ----------
+  async function downloadBlob(url, opts, fallbackName) {
+    const res = await fetch(BASE + url, opts);
+    if (!res.ok) { let b = {}; try { b = await res.json(); } catch (_) {} throw new Error(b.detail || ("خطأ " + res.status)); }
+    const blob = await res.blob();
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)"?/i);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = m ? decodeURIComponent(m[1]) : fallbackName;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  function adminHeaders() {
+    const k = $("countAdmin").value.trim() || sessionStorage.getItem(ADMIN_STORE) || "";
+    return k ? { "X-Admin-Key": k } : {};
+  }
+  function countMode() { return document.querySelector('input[name="countMode"]:checked').value; }
+  function syncCountUi() {
+    const sheet = countMode() === "sheet";
+    $("countAdmin").hidden = !(sheet && state.cfg.admin_required);
+    if (sheet && !$("countFile").value && state.files.length) $("countFile").value = state.files[0].id;
+  }
+  document.querySelectorAll('input[name="countMode"]').forEach((r) => r.addEventListener("change", syncCountUi));
+  $("saveCountOpen").addEventListener("click", () => {
+    if (!sessionRows().length) { toast("الجدول فاضي — امسح قطع الأول"); return; }
+    const d = new Date();
+    if (!$("countName").value) $("countName").value = "جرد " + d.toLocaleDateString("ar-SA-u-nu-latn-ca-gregory");
+    $("countFile").innerHTML = '<option value="">كل الملفات</option>' +
+      state.files.map((f) => '<option value="' + esc(f.id) + '">' + esc(f.name) + "</option>").join("");
+    $("countMsg").hidden = true;
+    $("countPanel").hidden = false;
+    syncCountUi();
+    $("countPanel").scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+  $("countCancel").addEventListener("click", () => { $("countPanel").hidden = true; });
+  $("countSave").addEventListener("click", async () => {
+    const ids = sessionRows().map((e) => e.id);
+    const mode = countMode(), fileId = $("countFile").value;
+    const msg = $("countMsg");
+    const say = (ok, html) => { msg.className = ok ? "up-ok" : "up-err"; msg.innerHTML = html; msg.hidden = false; };
+    if (mode === "sheet" && !fileId) return say(false, "اختار ملف الإكسل اللي هتتضاف فيه صفحة الجرد.");
+    if (mode === "sheet" && state.cfg.admin_required && !Object.keys(adminHeaders()).length) return say(false, "أدخل مفتاح المسؤول.");
+    const btn = $("countSave"); btn.disabled = true; btn.textContent = "جارٍ الحفظ…";
+    try {
+      const r = await fetch(BASE + "/api/counts", {
+        method: "POST",
+        headers: { "X-Access-Key": state.key, "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ name: $("countName").value.trim(), channel: disp.channel, ids, file_id: fileId }),
+      });
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok) return say(false, "✖ " + esc(b.detail || "تعذر الحفظ"));
+      const c = b.count, s = c.summary;
+      let html = "✔ تم حفظ <b>" + esc(c.name) + "</b> على السيستم.<br>" +
+        "ممسوح: " + s.unique + " • موجود: " + s.found + " • غير موجود: " + s.not_found + " • ناقص: " + s.missing;
+      if (mode === "file") {
+        await downloadBlob("/api/counts/" + c.id + "/excel", { headers: { "X-Access-Key": state.key } }, c.name + ".xlsx");
+        html += "<br>تم تنزيل ملف Excel باسم الجرد.";
+      } else {
+        const a = await fetch(BASE + "/api/counts/" + c.id + "/append", {
+          method: "POST",
+          headers: Object.assign({ "X-Access-Key": state.key, "Content-Type": "application/json", "Accept": "application/json" }, adminHeaders()),
+          body: JSON.stringify({ file_id: fileId }),
+        });
+        const ab = await a.json().catch(() => ({}));
+        if (!a.ok) return say(false, html.replace("✔", "⚠") + "<br>✖ لم تتم إضافة الصفحة للملف: " + esc(ab.detail || a.status));
+        try { const k = $("countAdmin").value.trim(); if (k) sessionStorage.setItem(ADMIN_STORE, k); } catch (_) {}
+        html += "<br>تمت إضافة صفحتين لملف <b>" + esc(ab.file) + "</b>: " + ab.sheets.map(esc).join(" و ") +
+          '<br><button type="button" class="btn outline small-btn" data-dl-file="' + esc(ab.file_id) + '" data-name="' + esc(ab.file) + '">تنزيل الملف بعد الإضافة</button>';
+      }
+      say(true, html);
+      loadCounts();
+    } catch (e) {
+      say(false, "✖ " + esc(e.message || "تعذر الاتصال بالخادم"));
+    } finally {
+      btn.disabled = false; btn.textContent = "حفظ";
+    }
+  });
+  $("countMsg").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-dl-file]");
+    if (!b) return;
+    try { await downloadBlob("/api/files/" + b.dataset.dlFile + "/download", { headers: Object.assign({ "X-Access-Key": state.key }, adminHeaders()) }, b.dataset.name); }
+    catch (err) { toast(err.message); }
+  });
+  async function loadCounts() {
+    try {
+      const r = await api("/api/counts");
+      if (r.status !== 200) return;
+      const list = r.body.counts || [];
+      $("countsList").innerHTML = list.length ? list.map((c) => {
+        const s = c.summary || {};
+        const when = new Date(c.created_at);
+        return '<div class="count-item"><div class="main"><div class="nm">' + esc(c.name) + "</div>" +
+          '<div class="meta">' + esc(isNaN(when) ? "" : when.toLocaleString("ar-SA-u-nu-latn-ca-gregory")) + " • ممسوح " + (s.unique || 0) +
+          " • موجود " + (s.found || 0) + " • ناقص " + (s.missing || 0) +
+          ((c.appended || []).length ? " • مضاف لملف " + esc(c.appended[c.appended.length - 1].file) : "") + "</div></div>" +
+          '<div class="acts"><button type="button" class="btn outline small-btn" data-dl-count="' + esc(c.id) + '" data-name="' + esc(c.name) + '">Excel</button></div></div>';
+      }).join("") : '<p class="muted small">لا توجد جرودات محفوظة</p>';
+    } catch (_) {}
+  }
+  $("countsList").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-dl-count]");
+    if (!b) return;
+    try { await downloadBlob("/api/counts/" + b.dataset.dlCount + "/excel", { headers: { "X-Access-Key": state.key } }, b.dataset.name + ".xlsx"); }
+    catch (err) { toast(err.message); }
+  });
+
   // ---------- demo panel ----------
   async function loadDemo() {
     if (!state.cfg.demo_mode) { $("demoPanel").hidden = true; return; }
@@ -1133,7 +1239,7 @@
     clearInterval(pollTimer);
     pollTimer = setInterval(pollHealth, Math.max(2, state.cfg.poll_interval_seconds || 3) * 1000);
     if (initialQuery) { search(initialQuery); initialQuery = ""; }
-    if (initialDisplay !== null) { openDisplay(initialDisplay || live.channel); initialDisplay = null; }
+    if (initialDisplay !== null) { openDisplay(initialDisplay || live.channel); loadCounts(); initialDisplay = null; }
   }
   // Optional ?q=BARCODE opens a lookup directly (handy for testing/bookmarks).
   let initialQuery = new URLSearchParams(location.search).get("q") || "";

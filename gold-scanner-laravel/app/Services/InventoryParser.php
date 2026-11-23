@@ -14,7 +14,7 @@ use Throwable;
 class InventoryParser
 {
     /** Bump when parsing rules change: stored indexes with another version are re-parsed automatically. */
-    public const VERSION = 3;
+    public const VERSION = 4;
 
     public function __construct(private array $cfg)
     {
@@ -144,6 +144,10 @@ class InventoryParser
         $ci = (bool) ($this->cfg['case_insensitive_barcodes'] ?? true);
 
         foreach ($target as $sname) {
+            // stock-count sheets written by this app ("جرد ...") are reports, not inventory
+            if (! ($this->cfg['sheets'] ?? []) && str_starts_with(trim($sname), trim(InventoryCount::SHEET_PREFIX).' ')) {
+                continue;
+            }
             /** @var Worksheet $sh */
             $sh = $book->getSheetByName($sname);
             $maxRow = $sh->getHighestDataRow();

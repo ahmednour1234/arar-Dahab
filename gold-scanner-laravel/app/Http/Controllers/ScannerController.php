@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\InventoryParser;
 use App\Services\InventoryReadException;
+use App\Services\InventoryCount;
 use App\Services\InventoryStore;
 use App\Services\LiveFeed;
 use Illuminate\Http\JsonResponse;
@@ -166,6 +167,107 @@ class ScannerController extends Controller
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Cache-Control' => 'no-store',
         ]);
+    }
+
+    // ------------------------------------------------------------ stock counts (جرد)
+
+    private function adminDenied(Request $request): ?JsonResponse
+    {
+        $admin = (string) $this->cfg('admin_key');
+        if ($admin !== '' && ! hash_equals($admin, (string) $request->header('X-Admin-Key', ''))) {
+            return response()->json(['detail' => 'مفتاح المسؤول غير صحيح'], 401);
+        }
+
+        return null;
+    }
+
+    private function counts(): InventoryCount
+    {
+        return app(InventoryCount::class);
+    }
+
+    /** Save a count on the server. Body: {"name", "channel", "ids": [...], "file_id": optional} */
+    public function createCount(Request $request): JsonResponse
+    {
+        $channel = LiveFeed::cleanChannel((string) $request->input('channel', 'main'));
+        $ids = array_slice(array_filter(array_map('intval', (array) $request->input('ids', []))), 0, 5000);
+        $events = $this->live->byIds($channel, $ids);
+        if (! $events) {
+            return response()->json(['detail' => 'لا توجد عمليات مسح في الجدول'], 422);
+        }
+        $fileId = (string) $request->input('file_id', '');
+        $fileId = preg_match('/^[0-9a-f]{12}$/', $fileId) && isset($this->store->sourceFiles()[$fileId]) ? $fileId : null;
+        $count = $this->counts()->create((string) $request->input('name', ''), $events, $fileId);
+
+        return response()->json(['count' => ['id' => $count['id'], 'name' => $count['name'], 'created_at' => $count['created_at'],
+            'file_id' => $fileId, 'summary' => $count['summary']]]);
+    }
+
+    public function listCounts(): JsonResponse
+    {
+        return response()->json(['counts' => $this->counts()->all()]);
+    }
+
+    public function countExcel(string $id)
+    {
+        $count = $this->counts()->get($id);
+        if (! $count) {
+            return response()->json(['detail' => 'الجرد غير موجود'], 404);
+        }
+        $book = $this->counts()->standaloneWorkbook($count);
+        $name = str_replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|'], '-', $count['name']).'.xlsx';
+        $writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($book, 'Xlsx');
+
+        return response()->streamDownload(function () use ($writer, $book) {
+            $writer->save('php://output');
+            $book->disconnectWorksheets();
+        }, $name, ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Cache-Control' => 'no-store']);
+    }
+
+    /** Add the count as new sheets inside an inventory Excel file. Body: {"file_id"} */
+    public function appendCount(Request $request, string $id): JsonResponse
+    {
+        if ($deny = $this->adminDenied($request)) {
+            return $deny;
+        }
+        $count = $this->counts()->get($id);
+        if (! $count) {
+            return response()->json(['detail' => 'الجرد غير موجود'], 404);
+        }
+        try {
+            $res = $this->counts()->appendToFile($count, (string) $request->input('file_id', ''));
+        } catch (InventoryReadException $e) {
+            return response()->json(['detail' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            Log::error('append count failed: '.$e->getMessage());
+
+            return response()->json(['detail' => 'تعذر إضافة الصفحة للملف'], 500);
+        }
+
+        return response()->json(['ok' => true] + $res);
+    }
+
+    public function deleteCount(Request $request, string $id): JsonResponse
+    {
+        if ($deny = $this->adminDenied($request)) {
+            return $deny;
+        }
+
+        return $this->counts()->delete($id) ? response()->json(['ok' => true]) : response()->json(['detail' => 'الجرد غير موجود'], 404);
+    }
+
+    /** Download an inventory Excel file as stored on the server (e.g. after count sheets were added). */
+    public function downloadFile(Request $request, string $id)
+    {
+        if ($deny = $this->adminDenied($request)) {
+            return $deny;
+        }
+        $path = $this->store->sourceFiles()[$id] ?? null;
+        if (! $path) {
+            return response()->json(['detail' => 'الملف غير موجود'], 404);
+        }
+
+        return response()->download($path, basename($path), ['Cache-Control' => 'no-store']);
     }
 
     private function lookup(Request $request, string $barcode): JsonResponse

@@ -392,6 +392,51 @@ class ScannerTest extends TestCase
         $this->postJson('/api/live/export', ['channel' => 'c1', 'ids' => [1]])->assertStatus(401);
     }
 
+    public function test_stock_count_saved_exported_and_appended_to_file(): void
+    {
+        $this->app->singleton(\App\Services\LiveFeed::class, fn () => new \App\Services\LiveFeed($this->dir.'/live'));
+        $this->app->bind(\App\Services\InventoryCount::class, fn ($app) => new \App\Services\InventoryCount($app->make(InventoryStore::class), $this->dir.'/counts'));
+        foreach (['00123456', '6280001001', '6280001001', '999999', 'DUP-5555'] as $code) {
+            $this->getJson('/api/item/'.$code.'?live=jard&device=d1', $this->h);
+        }
+        $fileId = $this->getJson('/api/files', $this->h)->json('files.0.id');
+
+        // save on the system, compared with the inventory file
+        $c = $this->postJson('/api/counts', ['name' => 'جرد نوفمبر', 'channel' => 'jard', 'ids' => [1, 2, 3, 4, 5], 'file_id' => $fileId], $this->h)
+            ->assertOk()->json('count');
+        $this->assertSame(['scans' => 5, 'unique' => 4, 'found' => 2, 'not_found' => 1, 'duplicates' => 1, 'scanned_twice' => 1,
+            'in_file' => 36, 'missing' => 32, 'weight_found' => 47.08], $c['summary']);   // 36 rows - 2 found - 2 rows of the scanned duplicate
+        $this->assertCount(1, $this->getJson('/api/counts', $this->h)->json('counts'));
+
+        // standalone Excel: count sheet + missing sheet, barcodes as text
+        $res = $this->get('/api/counts/'.$c['id'].'/excel', $this->h)->assertOk();
+        file_put_contents($f = $this->dir.'/count.xlsx', $res->streamedContent());
+        $book = IOFactory::load($f);
+        $this->assertSame(['جرد نوفمبر', 'جرد ناقص نوفمبر'], $book->getSheetNames());
+        $this->assertSame('00123456', $book->getSheet(0)->getCell('E2')->getValue());
+        $this->assertSame(2, $book->getSheet(0)->getCell('R3')->getValue());     // 6280001001 scanned twice
+
+        // append as new sheets to the inventory file itself (backup kept), inventory not duplicated
+        $this->postJson('/api/counts/'.$c['id'].'/append', ['file_id' => $fileId], $this->h + ['X-Admin-Key' => 'x'])->assertStatus(401);
+        $this->postJson('/api/counts/'.$c['id'].'/append', ['file_id' => $fileId], $this->h + ['X-Admin-Key' => 'adm'])
+            ->assertOk()->assertJsonPath('sheets', ['جرد نوفمبر', 'جرد ناقص نوفمبر']);
+        $names = IOFactory::load($this->dir.'/files/inventory.xls')->getSheetNames();
+        $this->assertSame(['Inventory', 'جرد نوفمبر', 'جرد ناقص نوفمبر'], $names);
+        $this->assertNotEmpty(glob($this->dir.'/backups/*.xls'));
+        $this->app->forgetInstance(InventoryStore::class);
+        $fresh = new InventoryStore(config('goldscanner'), $this->dir);
+        $this->assertSame(36, $fresh->combined()['total_rows']);                  // count sheets are ignored
+        $this->getJson('/api/item/00123456', $this->h)->assertOk();
+
+        // a second count on the same file gets new, unique sheet names
+        $c2 = $this->postJson('/api/counts', ['name' => 'جرد نوفمبر', 'channel' => 'jard', 'ids' => [1], 'file_id' => $fileId], $this->h)->json('count');
+        $this->postJson('/api/counts/'.$c2['id'].'/append', ['file_id' => $fileId], $this->h + ['X-Admin-Key' => 'adm'])
+            ->assertOk()->assertJsonPath('sheets', ['جرد نوفمبر (2)', 'جرد ناقص نوفمبر (2)']);
+
+        // download the updated file
+        $this->get('/api/files/'.$fileId.'/download', $this->h + ['X-Admin-Key' => 'adm'])->assertOk();
+    }
+
     public function test_csv_upload(): void
     {
         $csv = "Barcode,Item Name,Price\nCSV-1,قطعة من CSV,99\n";

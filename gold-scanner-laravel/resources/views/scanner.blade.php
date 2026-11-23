@@ -124,7 +124,8 @@
       <div class="scan-table-head">
         <h3>جدول المسح <span class="muted small" id="tableSummary"></span></h3>
         <div class="scan-table-actions">
-          <button type="button" class="btn gold small-btn" id="exportExcel">حفظ Excel</button>
+          <button type="button" class="btn gold small-btn" id="saveCountOpen">حفظ الجرد</button>
+          <button type="button" class="btn outline small-btn" id="exportExcel">Excel سريع</button>
           <button type="button" class="btn outline small-btn" id="newSession">جدول جديد</button>
         </div>
       </div>
@@ -133,6 +134,30 @@
           <thead><tr><th>#</th><th>الوقت</th><th>الباركود</th><th>القطعة</th><th>العيار</th><th>الوزن</th><th>السعر</th><th>النتيجة</th><th></th></tr></thead>
           <tbody id="scanTableBody"><tr class="empty"><td colspan="9">لا توجد عمليات مسح بعد</td></tr></tbody>
         </table>
+      </div>
+
+      <!-- Save stock count (جرد) -->
+      <div class="card count-panel" id="countPanel" hidden>
+        <h3>حفظ الجرد</h3>
+        <label class="field">اسم الجرد <input id="countName" type="text" maxlength="80" dir="auto"></label>
+        <label class="field">مقارنة مع (لمعرفة القطع الناقصة)
+          <select id="countFile" class="select"><option value="">كل الملفات</option></select>
+        </label>
+        <div class="field">طريقة الحفظ في Excel</div>
+        <label class="radio"><input type="radio" name="countMode" value="file" checked> <span><b>ملف Excel لوحده</b> — باسم الجرد</span></label>
+        <label class="radio"><input type="radio" name="countMode" value="sheet"> <span><b>صفحة جديدة جوه ملف الإكسل</b> اللي اخترته فوق (بعد صفحة البيانات)</span></label>
+        <input id="countAdmin" type="password" autocomplete="off" placeholder="مفتاح المسؤول" dir="ltr" hidden>
+        <p class="muted small">الجرد بيتحفظ على السيستم في كل الحالات، وتقدر تنزّله تاني من "الجرودات المحفوظة".</p>
+        <div class="row">
+          <button type="button" class="btn gold" id="countSave">حفظ</button>
+          <button type="button" class="btn outline" id="countCancel">إلغاء</button>
+        </div>
+        <div id="countMsg" hidden></div>
+      </div>
+
+      <div class="saved-counts">
+        <h3>الجرودات المحفوظة</h3>
+        <div id="countsList" class="list"><p class="muted small">لا توجد جرودات محفوظة</p></div>
       </div>
       <button class="btn outline big" type="button" id="displayClose" style="margin-top:14px">رجوع للماسح</button>
     </section>

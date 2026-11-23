@@ -340,7 +340,7 @@ class InventoryStore
         ];
     }
 
-    private function backup(string $path): void
+    public function backupFile(string $path): void
     {
         $info = pathinfo($path);
         copy($path, $this->dir.'/backups/'.$info['filename'].'-'.date('Ymd-His').'.'.$info['extension']);
@@ -368,7 +368,7 @@ class InventoryStore
         foreach (self::EXTS as $e) {                 // same base name, other extension -> replace too
             $other = $this->dir.'/files/'.pathinfo($name, PATHINFO_FILENAME).'.'.$e;
             if (is_file($other)) {
-                $this->backup($other);
+                $this->backupFile($other);
                 $replaced = true;
                 if ($other !== $target) {
                     @unlink($other);
@@ -398,7 +398,7 @@ class InventoryStore
         if (! $path) {
             return false;
         }
-        $this->backup($path);
+        $this->backupFile($path);
         @unlink($path);
         @unlink($this->dir.'/index/'.$id.'.json');
         $st = $this->status();

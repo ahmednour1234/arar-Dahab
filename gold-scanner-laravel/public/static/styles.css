@@ -284,3 +284,20 @@ body.is-display main { max-width: 1100px; }
 .multi-head h2 { margin: 6px 0; font-size: 1.25rem; }
 .multi-list .li .res { flex: none; font-size: .82rem; }
 .img-preview { display: block; max-width: 100%; max-height: 220px; margin: 0 auto 12px; border-radius: 10px; border: 1px solid var(--line); }
+
+/* ---------- stock count ---------- */
+.count-panel { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.count-panel h3, .saved-counts h3 { margin: 0; font-size: 1.05rem; }
+.count-panel .field { display: flex; flex-direction: column; gap: 6px; font-size: .88rem; color: var(--muted); }
+.count-panel .radio { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.count-panel .radio input { margin-top: 4px; accent-color: var(--gold); }
+.count-panel .row { gap: 10px; }
+.count-panel .row .btn { flex: 1; }
+.saved-counts { margin-top: 18px; display: flex; flex-direction: column; gap: 8px; }
+.count-item { display: flex; gap: 10px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.count-item .main { flex: 1; min-width: 0; }
+.count-item .nm { font-weight: 700; }
+.count-item .meta { color: var(--muted); font-size: .8rem; }
+.count-item .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.count-panel .radio input { flex: none; }
+.count-panel .radio span { flex: 1; }
