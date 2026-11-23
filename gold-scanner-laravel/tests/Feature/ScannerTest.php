@@ -199,8 +199,43 @@ class ScannerTest extends TestCase
         $this->deleteJson('/api/admin/files/'.$branch['id'], [], $this->h + ['X-Admin-Key' => 'adm'])->assertOk();
         $this->getJson('/api/item/BR-1', $this->h)->assertStatus(404);
         $this->assertCount(1, $this->getJson('/api/files', $this->h)->json('files'));
-        $this->assertNotEmpty(glob($this->dir.'/backups/*.xlsx'));   // deleted file kept as backup
         $this->assertSame($main['id'], $this->getJson('/api/files', $this->h)->json('files.0.id'));
+
+        // soft delete: the file is in the trash and can be restored
+        $trash = $this->getJson('/api/trash', $this->h)->assertOk()->json('files');
+        $this->assertCount(1, $trash);
+        $this->postJson('/api/trash/files/'.$trash[0]['id'].'/restore', [], $this->h + ['X-Admin-Key' => 'x'])->assertStatus(401);
+        $this->postJson('/api/trash/files/'.$trash[0]['id'].'/restore', [], $this->h + ['X-Admin-Key' => 'adm'])->assertOk();
+        $this->getJson('/api/item/BR-1', $this->h)->assertOk();
+        $this->assertCount(2, $this->getJson('/api/files', $this->h)->json('files'));
+        $this->assertCount(0, $this->getJson('/api/trash', $this->h)->json('files'));
+    }
+
+    public function test_counts_soft_delete_restore_and_merge(): void
+    {
+        $this->app->singleton(\App\Services\LiveFeed::class, fn () => new \App\Services\LiveFeed($this->dir.'/live'));
+        $this->app->bind(\App\Services\InventoryCount::class, fn ($app) => new \App\Services\InventoryCount($app->make(InventoryStore::class), $this->dir.'/counts'));
+        foreach (['00123456', '6280001001', '6280001001', '999999'] as $code) {
+            $this->getJson('/api/item/'.$code.'?live=m&device=d', $this->h);
+        }
+        $a = $this->postJson('/api/counts', ['name' => 'أ', 'channel' => 'm', 'ids' => [1, 2]], $this->h)->json('count');
+        $b = $this->postJson('/api/counts', ['name' => 'ب', 'channel' => 'm', 'ids' => [3, 4]], $this->h)->json('count');
+
+        $m = $this->postJson('/api/counts/merge', ['name' => 'مدمج', 'ids' => [$a['id'], $b['id']]], $this->h)->assertOk()->json('count');
+        $this->assertSame(4, $m['summary']['scans']);
+        $this->assertSame(3, $m['summary']['unique']);          // 6280001001 in both -> once
+        $this->assertSame(1, $m['summary']['scanned_twice']);
+        $this->assertCount(2, $m['merged_from']);
+        $this->postJson('/api/counts/merge', ['ids' => [$a['id']]], $this->h)->assertStatus(422);
+        $this->assertCount(3, $this->getJson('/api/counts', $this->h)->json('counts'));
+
+        $this->deleteJson('/api/counts/'.$a['id'], [], $this->h + ['X-Admin-Key' => 'adm'])->assertOk();
+        $this->assertCount(2, $this->getJson('/api/counts', $this->h)->json('counts'));
+        $this->assertSame($a['id'], $this->getJson('/api/trash', $this->h)->json('counts.0.id'));
+        $this->get('/api/counts/'.$a['id'].'/excel', $this->h)->assertOk();     // still on disk
+        $this->postJson('/api/counts/'.$a['id'].'/restore', [], $this->h + ['X-Admin-Key' => 'adm'])->assertOk();
+        $this->assertCount(3, $this->getJson('/api/counts', $this->h)->json('counts'));
+        $this->assertCount(0, $this->getJson('/api/trash', $this->h)->json('counts'));
     }
 
     public function test_csv_utf8_bom_and_windows_1256(): void

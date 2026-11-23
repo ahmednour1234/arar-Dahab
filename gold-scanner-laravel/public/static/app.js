@@ -872,7 +872,7 @@
       const res = await fetch(BASE + "/api/admin/files/" + b.dataset.del, {
         method: "DELETE", headers: { "X-Access-Key": state.key, "X-Admin-Key": admin } });
       let body = {}; try { body = await res.json(); } catch (_) {}
-      if (res.ok) { try { sessionStorage.setItem(ADMIN_STORE, admin); } catch (_) {} toast("تم حذف الملف"); loadFiles(); pollHealth(); loadDemo(); }
+      if (res.ok) { try { sessionStorage.setItem(ADMIN_STORE, admin); } catch (_) {} toast("تم نقل الملف للمحذوفات"); loadFiles(); pollHealth(); loadDemo(); }
       else toast(body.detail || "تعذر الحذف");
     } catch (_) { toast("تعذر الاتصال بالخادم"); }
   });
@@ -1200,15 +1200,78 @@
       $("countsList").innerHTML = list.length ? list.map((c) => {
         const s = c.summary || {};
         const when = new Date(c.created_at);
-        return '<div class="count-item"><div class="main"><div class="nm">' + esc(c.name) + "</div>" +
+        return '<div class="count-item"><input type="checkbox" class="merge-pick" value="' + esc(c.id) + '"><div class="main"><div class="nm">' + esc(c.name) +
+          ((c.merged_from || []).length ? ' <span class="muted small">(مدمج من ' + c.merged_from.map((m) => esc(m.name)).join(" + ") + ")</span>" : "") + "</div>" +
           '<div class="meta">' + esc(isNaN(when) ? "" : when.toLocaleString("ar-SA-u-nu-latn-ca-gregory")) + " • ممسوح " + (s.unique || 0) +
           " • موجود " + (s.found || 0) + " • ناقص " + (s.missing || 0) +
           ((c.appended || []).length ? " • مضاف لملف " + esc(c.appended[c.appended.length - 1].file) : "") + "</div></div>" +
           '<div class="acts"><button type="button" class="btn outline small-btn" data-dl-count="' + esc(c.id) + '" data-name="' + esc(c.name) + '">Excel</button>' +
           '<button type="button" class="del-btn" data-del-count="' + esc(c.id) + '" data-name="' + esc(c.name) + '">حذف</button></div></div>';
       }).join("") : '<p class="muted small">لا توجد جرودات محفوظة</p>';
+      syncMerge();
+      if (!$("trashList").hidden) loadTrash();
     } catch (_) {}
   }
+  function syncMerge() {
+    const n = document.querySelectorAll(".merge-pick:checked").length;
+    $("mergeN").textContent = n;
+    $("mergeBar").hidden = n < 2;
+  }
+  $("countsList").addEventListener("change", (e) => { if (e.target.classList.contains("merge-pick")) syncMerge(); });
+  $("mergeBtn").addEventListener("click", async () => {
+    const ids = [...document.querySelectorAll(".merge-pick:checked")].map((x) => x.value);
+    if (ids.length < 2) return;
+    const btn = $("mergeBtn"); btn.disabled = true;
+    try {
+      const r = await fetch(BASE + "/api/counts/merge", {
+        method: "POST",
+        headers: { "X-Access-Key": state.key, "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ name: $("mergeName").value.trim(), ids }),
+      });
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(b.detail || "تعذر الدمج"); return; }
+      toast("تم إنشاء " + b.count.name + " — ممسوح " + b.count.summary.unique + " • ناقص " + b.count.summary.missing);
+      $("mergeName").value = "";
+      loadCounts();
+    } catch (_) { toast("تعذر الاتصال بالخادم"); }
+    finally { btn.disabled = false; }
+  });
+  function adminKeyAny() {
+    return ($("countAdmin").value.trim() || $("adminKey").value.trim() || sessionStorage.getItem(ADMIN_STORE) || "");
+  }
+  async function loadTrash() {
+    try {
+      const r = await api("/api/trash");
+      if (r.status !== 200) return;
+      const fmt = (t) => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleString("ar-SA-u-nu-latn-ca-gregory"); };
+      const rows = (r.body.counts || []).map((c) =>
+        '<div class="count-item"><div class="main"><div class="nm">جرد: ' + esc(c.name) + '</div><div class="meta">اتحذف ' + esc(fmt(c.deleted_at)) + "</div></div>" +
+        '<div class="acts"><button type="button" class="btn outline small-btn" data-restore-count="' + esc(c.id) + '">استرجاع</button></div></div>')
+        .concat((r.body.files || []).map((f) =>
+        '<div class="count-item"><div class="main"><div class="nm">ملف: ' + esc(f.name) + '</div><div class="meta">اتحذف ' + esc(fmt(f.deleted_at)) + "</div></div>" +
+        '<div class="acts"><button type="button" class="btn outline small-btn" data-restore-file="' + esc(f.id) + '">استرجاع</button></div></div>'));
+      $("trashList").innerHTML = rows.length ? rows.join("") : '<p class="muted small">مفيش حاجة محذوفة</p>';
+    } catch (_) {}
+  }
+  $("trashToggle").addEventListener("click", () => {
+    const t = $("trashList"); t.hidden = !t.hidden;
+    $("trashToggle").textContent = t.hidden ? "عرض" : "إخفاء";
+    if (!t.hidden) loadTrash();
+  });
+  $("trashList").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-restore-count],[data-restore-file]");
+    if (!b) return;
+    const k = adminKeyAny();
+    if (!k && state.cfg.admin_required) { toast("أدخل مفتاح المسؤول الأول"); return; }
+    const url = b.dataset.restoreCount ? "/api/counts/" + b.dataset.restoreCount + "/restore" : "/api/trash/files/" + b.dataset.restoreFile + "/restore";
+    try {
+      const r = await fetch(BASE + url, { method: "POST", headers: Object.assign({ "X-Access-Key": state.key, "Accept": "application/json" }, k ? { "X-Admin-Key": k } : {}) });
+      const rb = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(rb.detail || "تعذر الاسترجاع"); return; }
+      toast("تم الاسترجاع");
+      loadTrash(); loadCounts(); loadFiles(); pollHealth();
+    } catch (_) { toast("تعذر الاتصال بالخادم"); }
+  });
   $("countsList").addEventListener("click", async (e) => {
     const del = e.target.closest("[data-del-count]");
     if (del) {
@@ -1229,7 +1292,7 @@
         });
         const rb = await r.json().catch(() => ({}));
         if (!r.ok) { toast(rb.detail || "تعذر الحذف"); return; }
-        toast("تم حذف " + del.dataset.name);
+        toast("تم نقل " + del.dataset.name + " للمحذوفات");
         loadCounts();
       } catch (_) { toast("تعذر الاتصال بالخادم"); }
       return;

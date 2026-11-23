@@ -158,6 +158,16 @@
       <div class="saved-counts">
         <h3>الجرودات المحفوظة</h3>
         <div id="countsList" class="list"><p class="muted small">لا توجد جرودات محفوظة</p></div>
+        <div class="merge-bar" id="mergeBar" hidden>
+          <input id="mergeName" type="text" maxlength="80" dir="auto" placeholder="اسم الجرد المدمج">
+          <button type="button" class="btn gold small-btn" id="mergeBtn">دمج المحدد (<span id="mergeN">0</span>)</button>
+        </div>
+        <p class="muted small">علّم على جردين أو أكتر عشان تدمجهم في جرد واحد جديد. الجرودات الأصلية مش بتتمسح.</p>
+      </div>
+
+      <div class="saved-counts">
+        <h3>المحذوفات <button type="button" class="btn outline small-btn" id="trashToggle">عرض</button></h3>
+        <div id="trashList" class="list" hidden></div>
       </div>
       <button class="btn outline big" type="button" id="displayClose" style="margin-top:14px">رجوع للماسح</button>
     </section>
@@ -219,6 +229,7 @@
       <div class="card files-card">
         <h3>الملفات المرفوعة</h3>
         <div id="filesList" class="files-list"><p class="muted small">لا توجد ملفات</p></div>
+        <p class="muted small">الحذف مؤقت: الملف بيروح "المحذوفات" في شاشة العرض وتقدر ترجّعه.</p>
       </div>
       <button class="btn outline big" type="button" id="uploadClose" style="margin-top:12px">رجوع للمسح</button>
     </section>

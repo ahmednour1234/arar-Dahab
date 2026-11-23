@@ -208,6 +208,45 @@ class ScannerController extends Controller
         return response()->json(['counts' => $this->counts()->all()]);
     }
 
+    /** Body: {"name", "ids": [countId, ...]} (2 or more). */
+    public function mergeCounts(Request $request): JsonResponse
+    {
+        $count = $this->counts()->merge((string) $request->input('name', ''), array_map('strval', (array) $request->input('ids', [])));
+        if (! $count) {
+            return response()->json(['detail' => 'اختار جردين أو أكتر للدمج'], 422);
+        }
+
+        return response()->json(['count' => ['id' => $count['id'], 'name' => $count['name'], 'created_at' => $count['created_at'],
+            'file_id' => $count['file_id'], 'summary' => $count['summary'], 'merged_from' => $count['merged_from']]]);
+    }
+
+    /** Soft-deleted counts and files. */
+    public function trash(): JsonResponse
+    {
+        return response()->json(['counts' => $this->counts()->all(true), 'files' => $this->store->trashFiles()]);
+    }
+
+    public function restoreCount(Request $request, string $id): JsonResponse
+    {
+        if ($deny = $this->adminDenied($request)) {
+            return $deny;
+        }
+
+        return $this->counts()->restore($id) ? response()->json(['ok' => true]) : response()->json(['detail' => 'الجرد مش في المحذوفات'], 404);
+    }
+
+    public function restoreFile(Request $request, string $id): JsonResponse
+    {
+        if ($deny = $this->adminDenied($request)) {
+            return $deny;
+        }
+        try {
+            return response()->json(['ok' => true, 'file' => $this->store->restoreFile($id)]);
+        } catch (InventoryReadException $e) {
+            return response()->json(['detail' => $e->getMessage()], 422);
+        }
+    }
+
     public function countExcel(string $id)
     {
         $count = $this->counts()->get($id);

@@ -71,13 +71,13 @@ class InventoryCount
         return is_array($d) ? $d : null;
     }
 
-    public function all(): array
+    public function all(bool $trash = false): array
     {
         $out = [];
         foreach (glob($this->dir.'/*.json') ?: [] as $p) {
             $d = json_decode((string) file_get_contents($p), true);
-            if (is_array($d)) {
-                $out[] = ['id' => $d['id'], 'name' => $d['name'], 'created_at' => $d['created_at'],
+            if (is_array($d) && empty($d['deleted_at']) === ! $trash) {
+                $out[] = ['deleted_at' => $d['deleted_at'] ?? null, 'merged_from' => $d['merged_from'] ?? [], 'id' => $d['id'], 'name' => $d['name'], 'created_at' => $d['created_at'],
                     'file_id' => $d['file_id'] ?? null, 'summary' => $d['summary'] ?? [], 'appended' => $d['appended'] ?? []];
             }
         }
@@ -86,9 +86,50 @@ class InventoryCount
         return $out;
     }
 
+    /** Soft delete: the count is kept and can be restored. */
     public function delete(string $id): bool
     {
-        return $this->get($id) !== null && @unlink($this->dir.'/'.$id.'.json');
+        return $this->mark($id, now()->toIso8601String());
+    }
+
+    public function restore(string $id): bool
+    {
+        return $this->mark($id, null);
+    }
+
+    private function mark(string $id, ?string $deletedAt): bool
+    {
+        $c = $this->get($id);
+        if (! $c || ($deletedAt === null) === empty($c['deleted_at'])) {
+            return false;
+        }
+        $c['deleted_at'] = $deletedAt;
+
+        return (bool) file_put_contents($this->dir.'/'.$id.'.json', json_encode($c, JSON_UNESCAPED_UNICODE));
+    }
+
+    /** Merge several counts into a new one (all their scans; the originals stay as they are). */
+    public function merge(string $name, array $ids): ?array
+    {
+        $parts = array_values(array_filter(array_map(fn ($i) => $this->get((string) $i), array_unique($ids)),
+            fn ($c) => $c && empty($c['deleted_at'])));
+        if (count($parts) < 2) {
+            return null;
+        }
+        usort($parts, fn ($a, $b) => strcmp($a['created_at'], $b['created_at']));
+        $files = array_values(array_unique(array_map(fn ($c) => (string) ($c['file_id'] ?? ''), $parts)));
+        $count = [
+            'id' => now()->format('Ymd-His').'-'.bin2hex(random_bytes(3)),
+            'name' => trim($name) !== '' ? mb_substr(trim($name), 0, 80) : 'جرد مدمج '.now()->format('Y-m-d'),
+            'created_at' => now()->toIso8601String(),
+            'file_id' => count($files) === 1 && $files[0] !== '' ? $files[0] : null,
+            'merged_from' => array_map(fn ($c) => ['id' => $c['id'], 'name' => $c['name']], $parts),
+            'rows' => array_merge(...array_map(fn ($c) => $c['rows'], $parts)),
+        ];
+        $count['summary'] = $this->summary($count);
+        file_put_contents($this->dir.'/'.$count['id'].'.json', json_encode($count, JSON_UNESCAPED_UNICODE));
+
+        return $count;
     }
 
     // ---------------------------------------------------------------- analysis

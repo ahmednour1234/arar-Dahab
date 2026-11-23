@@ -19,6 +19,10 @@ Route::middleware('gs:key')->group(function () {
     Route::get('/counts/{id}/with-file/{fileId}', [ScannerController::class, 'countWithFile']);
     Route::post('/counts/{id}/append', [ScannerController::class, 'appendCount'])->middleware('throttle:20,1');
     Route::delete('/counts/{id}', [ScannerController::class, 'deleteCount']);
+    Route::post('/counts/merge', [ScannerController::class, 'mergeCounts'])->middleware('throttle:20,1');
+    Route::post('/counts/{id}/restore', [ScannerController::class, 'restoreCount']);
+    Route::get('/trash', [ScannerController::class, 'trash']);
+    Route::post('/trash/files/{id}/restore', [ScannerController::class, 'restoreFile'])->where('id', '[0-9a-f]{12}');
     Route::get('/files/{id}/download', [ScannerController::class, 'downloadFile'])->where('id', '[0-9a-f]{12}');
     Route::delete('/admin/files/{id}', [ScannerController::class, 'deleteFile'])->where('id', '[0-9a-f]{12}')->middleware('throttle:20,1');
     Route::post('/admin/upload', [ScannerController::class, 'upload'])->middleware('throttle:10,1');

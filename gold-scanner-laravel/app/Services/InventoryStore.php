@@ -25,7 +25,7 @@ class InventoryStore
     public function __construct(private array $cfg, private ?string $dir = null)
     {
         $this->dir ??= storage_path('app/private/'.($cfg['storage_dir'] ?? 'inventory'));
-        foreach (['', '/files', '/index', '/backups'] as $sub) {
+        foreach (['', '/files', '/index', '/backups', '/trash'] as $sub) {
             if (! is_dir($this->dir.$sub)) {
                 @mkdir($this->dir.$sub, 0775, true);
             }
@@ -398,15 +398,52 @@ class InventoryStore
         if (! $path) {
             return false;
         }
-        $this->backupFile($path);
-        @unlink($path);
+        // soft delete: the file moves to trash/ and can be restored
+        rename($path, $this->dir.'/trash/'.date('Ymd-His').'__'.basename($path));
         @unlink($this->dir.'/index/'.$id.'.json');
         $st = $this->status();
         unset($st['files'][$id]);
         $this->saveStatus($st);
         $this->snapshots = null;
-        Log::info('Inventory file deleted');
+        Log::info('Inventory file moved to trash');
 
         return true;
+    }
+
+    /** Deleted files that can be restored. */
+    public function trashFiles(): array
+    {
+        $out = [];
+        foreach (glob($this->dir.'/trash/*') ?: [] as $p) {
+            if (! is_file($p) || ! preg_match('/^(\d{8})-(\d{6})__(.+)$/u', basename($p), $m)) {
+                continue;
+            }
+            $out[] = ['id' => substr(sha1(basename($p)), 0, 12), 'name' => $m[3],
+                'deleted_at' => \Illuminate\Support\Carbon::createFromFormat('YmdHis', $m[1].$m[2])->toIso8601String()];
+        }
+        usort($out, fn ($a, $b) => strcmp($b['deleted_at'], $a['deleted_at']));
+
+        return $out;
+    }
+
+    /** @throws InventoryReadException */
+    public function restoreFile(string $trashId): array
+    {
+        foreach (glob($this->dir.'/trash/*') ?: [] as $p) {
+            if (substr(sha1(basename($p)), 0, 12) !== $trashId || ! preg_match('/^\d{8}-\d{6}__(.+)$/u', basename($p), $m)) {
+                continue;
+            }
+            $target = $this->dir.'/files/'.$m[1];
+            if (is_file($target)) {
+                throw new InventoryReadException('فيه ملف بنفس الاسم موجود دلوقتي. احذفه أو غيّر اسمه الأول.');
+            }
+            rename($p, $target);
+            $id = self::fileId($m[1]);
+            $this->snapshots = null;
+            $this->reloadFile($id, $target, 'restore');
+
+            return ['id' => $id, 'name' => $m[1]];
+        }
+        throw new InventoryReadException('الملف مش موجود في المحذوفات');
     }
 }

@@ -310,3 +310,9 @@ input[type="radio"], input[type="checkbox"] { width: 20px; height: 20px; padding
 .count-panel .field input, .count-panel .field select { width: 100%; }
 
 .fi { gap: 8px; }
+
+/* ---------- merge counts / trash ---------- */
+.count-item .merge-pick { width: 20px; height: 20px; flex: none; }
+.merge-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.merge-bar input[type="text"] { flex: 1; min-width: 160px; }
+.saved-counts h3 { display: flex; align-items: center; gap: 10px; }
