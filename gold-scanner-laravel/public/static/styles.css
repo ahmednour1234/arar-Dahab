@@ -308,3 +308,5 @@ input[type="radio"], input[type="checkbox"] { width: 20px; height: 20px; padding
 .count-panel .radio span { flex: 1; line-height: 1.6; color: var(--text); }
 .count-panel .radio:has(input:checked) { border-color: var(--gold); background: rgba(212,175,55,.08); }
 .count-panel .field input, .count-panel .field select { width: 100%; }
+
+.fi { gap: 8px; }

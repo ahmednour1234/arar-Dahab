@@ -850,11 +850,19 @@
         '<div class="fi' + (f.state !== "ok" ? " err" : "") + '"><div class="main"><div class="nm">' + esc(f.name) + '</div><div class="meta">' +
         esc(f.records) + " قطعة" + (f.duplicate_barcodes ? " • " + esc(f.duplicate_barcodes) + " مكرر" : "") +
         " • " + esc(fmtTime(f.loaded_at)) + (f.last_error ? '<br><span style="color:#ffb3b1">' + esc(f.last_error) + "</span>" : "") +
-        '</div></div><button type="button" class="del-btn" data-del="' + esc(f.id) + '" data-name="' + esc(f.name) + '">حذف</button></div>').join("")
+        '</div></div><button type="button" class="btn outline small-btn" data-dl-src="' + esc(f.id) + '" data-name="' + esc(f.name) + '">تنزيل</button>' +
+        '<button type="button" class="del-btn" data-del="' + esc(f.id) + '" data-name="' + esc(f.name) + '">حذف</button></div>').join("")
         : '<p class="muted small">لا توجد ملفات</p>';
     } catch (_) {}
   }
   $("filesList").addEventListener("click", async (e) => {
+    const d = e.target.closest("[data-dl-src]");
+    if (d) {
+      const k = $("adminKey").value.trim() || sessionStorage.getItem(ADMIN_STORE) || "";
+      try { await downloadBlob("/api/files/" + d.dataset.dlSrc + "/download", { headers: Object.assign({ "X-Access-Key": state.key }, k ? { "X-Admin-Key": k } : {}) }, d.dataset.name); }
+      catch (err) { toast(err.message); }
+      return;
+    }
     const b = e.target.closest("[data-del]");
     if (!b) return;
     const admin = $("adminKey").value.trim();
