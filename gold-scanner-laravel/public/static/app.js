@@ -1132,7 +1132,7 @@
   function countMode() { return document.querySelector('input[name="countMode"]:checked').value; }
   function syncCountUi() {
     const sheet = countMode() === "sheet";
-    $("countAdmin").hidden = !(sheet && state.cfg.admin_required);
+    $("countAdmin").hidden = true;
     if (sheet && !$("countFile").value && state.files.length) $("countFile").value = state.files[0].id;
   }
   document.querySelectorAll('input[name="countMode"]').forEach((r) => r.addEventListener("change", syncCountUi));
@@ -1154,7 +1154,6 @@
     const msg = $("countMsg");
     const say = (ok, html) => { msg.className = ok ? "up-ok" : "up-err"; msg.innerHTML = html; msg.hidden = false; };
     if (mode === "sheet" && !fileId) return say(false, "اختار ملف الإكسل اللي هتتضاف فيه صفحة الجرد.");
-    if (mode === "sheet" && state.cfg.admin_required && !Object.keys(adminHeaders()).length) return say(false, "أدخل مفتاح المسؤول.");
     const btn = $("countSave"); btn.disabled = true; btn.textContent = "جارٍ الحفظ…";
     try {
       const r = await fetch(BASE + "/api/counts", {
@@ -1171,16 +1170,13 @@
         await downloadBlob("/api/counts/" + c.id + "/excel", { headers: { "X-Access-Key": state.key } }, c.name + ".xlsx");
         html += "<br>تم تنزيل ملف Excel باسم الجرد.";
       } else {
-        const a = await fetch(BASE + "/api/counts/" + c.id + "/append", {
-          method: "POST",
-          headers: Object.assign({ "X-Access-Key": state.key, "Content-Type": "application/json", "Accept": "application/json" }, adminHeaders()),
-          body: JSON.stringify({ file_id: fileId }),
-        });
-        const ab = await a.json().catch(() => ({}));
-        if (!a.ok) return say(false, html.replace("✔", "⚠") + "<br>✖ لم تتم إضافة الصفحة للملف: " + esc(ab.detail || a.status));
-        try { const k = $("countAdmin").value.trim(); if (k) sessionStorage.setItem(ADMIN_STORE, k); } catch (_) {}
-        html += "<br>تمت إضافة صفحتين لملف <b>" + esc(ab.file) + "</b>: " + ab.sheets.map(esc).join(" و ") +
-          '<br><button type="button" class="btn outline small-btn" data-dl-file="' + esc(ab.file_id) + '" data-name="' + esc(ab.file) + '">تنزيل الملف بعد الإضافة</button>';
+        const fname = (state.files.find((f) => f.id === fileId) || {}).name || "inventory.xlsx";
+        try {
+          await downloadBlob("/api/counts/" + c.id + "/with-file/" + encodeURIComponent(fileId), { headers: { "X-Access-Key": state.key } }, fname);
+        } catch (err) {
+          return say(false, html.replace("✔", "⚠") + "<br>✖ " + esc(err.message));
+        }
+        html += "<br>تم تنزيل نسخة من <b>" + esc(fname) + "</b> زي ما هو + صفحتين الجرد في الآخر. الملف الأصلي على السيستم ما اتعدّلش.";
       }
       say(true, html);
       loadCounts();

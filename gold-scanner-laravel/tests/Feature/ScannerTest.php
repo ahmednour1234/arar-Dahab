@@ -416,6 +416,14 @@ class ScannerTest extends TestCase
         $this->assertSame('00123456', $book->getSheet(0)->getCell('E2')->getValue());
         $this->assertSame(2, $book->getSheet(0)->getCell('R3')->getValue());     // 6280001001 scanned twice
 
+        // download a copy of the inventory file + count sheets; the stored file is untouched
+        $before = md5_file($this->dir.'/files/inventory.xls');
+        $res = $this->get('/api/counts/'.$c['id'].'/with-file/'.$fileId, $this->h)->assertOk();
+        file_put_contents($f = $this->dir.'/copy.xls', $res->streamedContent());
+        $this->assertSame(['Inventory', 'جرد نوفمبر', 'جرد ناقص نوفمبر'], IOFactory::load($f)->getSheetNames());
+        $this->assertSame($before, md5_file($this->dir.'/files/inventory.xls'));
+        $this->get('/api/counts/'.$c['id'].'/with-file/nope', $this->h)->assertStatus(422);
+
         // append as new sheets to the inventory file itself (backup kept), inventory not duplicated
         $this->postJson('/api/counts/'.$c['id'].'/append', ['file_id' => $fileId], $this->h + ['X-Admin-Key' => 'x'])->assertStatus(401);
         $this->postJson('/api/counts/'.$c['id'].'/append', ['file_id' => $fileId], $this->h + ['X-Admin-Key' => 'adm'])

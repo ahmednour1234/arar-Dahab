@@ -145,7 +145,7 @@
         </label>
         <div class="field">طريقة الحفظ في Excel</div>
         <label class="radio"><input type="radio" name="countMode" value="file" checked> <span><b>ملف Excel لوحده</b> — باسم الجرد</span></label>
-        <label class="radio"><input type="radio" name="countMode" value="sheet"> <span><b>صفحة جديدة جوه ملف الإكسل</b> اللي اخترته فوق (بعد صفحة البيانات)</span></label>
+        <label class="radio"><input type="radio" name="countMode" value="sheet"> <span><b>نسخة من ملف الإكسل</b> اللي اخترته فوق زي ما هو + صفحة الجرد في الآخر (الملف الأصلي مش بيتعدل)</span></label>
         <input id="countAdmin" type="password" autocomplete="off" placeholder="مفتاح المسؤول" dir="ltr" hidden>
         <p class="muted small">الجرد بيتحفظ على السيستم في كل الحالات، وتقدر تنزّله تاني من "الجرودات المحفوظة".</p>
         <div class="row">

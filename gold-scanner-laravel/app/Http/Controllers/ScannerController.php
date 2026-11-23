@@ -224,6 +224,31 @@ class ScannerController extends Controller
         }, $name, ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Cache-Control' => 'no-store']);
     }
 
+    /** Download a copy of an inventory file with the count sheets added; the stored file stays unchanged. */
+    public function countWithFile(string $id, string $fileId)
+    {
+        $count = $this->counts()->get($id);
+        if (! $count) {
+            return response()->json(['detail' => 'الجرد غير موجود'], 404);
+        }
+        try {
+            [$book, $type, $name, $titles] = $this->counts()->fileCopyWithCount($count, $fileId);
+        } catch (InventoryReadException $e) {
+            return response()->json(['detail' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            Log::error('count copy failed: '.$e->getMessage());
+
+            return response()->json(['detail' => 'تعذر تجهيز الملف'], 500);
+        }
+        $writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($book, $type);
+        $mime = $type === 'Xls' ? 'application/vnd.ms-excel' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+        return response()->streamDownload(function () use ($writer, $book) {
+            $writer->save('php://output');
+            $book->disconnectWorksheets();
+        }, $name, ['Content-Type' => $mime, 'Cache-Control' => 'no-store', 'X-Count-Sheets' => rawurlencode(implode('|', $titles))]);
+    }
+
     /** Add the count as new sheets inside an inventory Excel file. Body: {"file_id"} */
     public function appendCount(Request $request, string $id): JsonResponse
     {

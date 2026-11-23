@@ -303,6 +303,29 @@ class InventoryCount
     }
 
     /**
+     * A COPY of an inventory file with the count sheets added after its sheets.
+     * The stored file is never touched. Returns [Spreadsheet, writerType, downloadName, sheetTitles].
+     *
+     * @throws InventoryReadException
+     */
+    public function fileCopyWithCount(array $count, string $fileId): array
+    {
+        $path = $this->store->sourceFiles()[$fileId] ?? null;
+        if (! $path) {
+            throw new InventoryReadException('الملف غير موجود');
+        }
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        if ($ext === 'csv') {
+            throw new InventoryReadException('ملفات CSV ما ينفعش يتضاف لها صفحات. اختار "ملف Excel لوحده"، أو ارفع الملف بصيغة xlsx.');
+        }
+        $book = IOFactory::createReaderForFile($path)->load($path);
+        $titles = $this->addSheets($book, $count);
+        $book->setActiveSheetIndex(0);
+
+        return [$book, $ext === 'xls' ? 'Xls' : 'Xlsx', basename($path), $titles];
+    }
+
+    /**
      * Append the count sheets to an inventory Excel file on the server (backup first).
      * The file is re-read afterwards; the new "جرد ..." sheets are ignored as inventory.
      *
