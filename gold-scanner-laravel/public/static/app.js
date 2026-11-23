@@ -1208,11 +1208,36 @@
           '<div class="meta">' + esc(isNaN(when) ? "" : when.toLocaleString("ar-SA-u-nu-latn-ca-gregory")) + " • ممسوح " + (s.unique || 0) +
           " • موجود " + (s.found || 0) + " • ناقص " + (s.missing || 0) +
           ((c.appended || []).length ? " • مضاف لملف " + esc(c.appended[c.appended.length - 1].file) : "") + "</div></div>" +
-          '<div class="acts"><button type="button" class="btn outline small-btn" data-dl-count="' + esc(c.id) + '" data-name="' + esc(c.name) + '">Excel</button></div></div>';
+          '<div class="acts"><button type="button" class="btn outline small-btn" data-dl-count="' + esc(c.id) + '" data-name="' + esc(c.name) + '">Excel</button>' +
+          '<button type="button" class="del-btn" data-del-count="' + esc(c.id) + '" data-name="' + esc(c.name) + '">حذف</button></div></div>';
       }).join("") : '<p class="muted small">لا توجد جرودات محفوظة</p>';
     } catch (_) {}
   }
   $("countsList").addEventListener("click", async (e) => {
+    const del = e.target.closest("[data-del-count]");
+    if (del) {
+      if (del.dataset.armed !== "1") {
+        del.dataset.armed = "1"; del.textContent = "تأكيد الحذف؟";
+        setTimeout(() => { del.dataset.armed = ""; del.textContent = "حذف"; }, 4000);
+        return;
+      }
+      const k = $("countAdmin").value.trim() || sessionStorage.getItem(ADMIN_STORE) || "";
+      if (!k && state.cfg.admin_required) {
+        const p = $("countAdmin"); p.hidden = false; $("countPanel").hidden = false; p.focus();
+        toast("أدخل مفتاح المسؤول للحذف"); return;
+      }
+      try {
+        const r = await fetch(BASE + "/api/counts/" + encodeURIComponent(del.dataset.delCount), {
+          method: "DELETE",
+          headers: Object.assign({ "X-Access-Key": state.key, "Accept": "application/json" }, k ? { "X-Admin-Key": k } : {}),
+        });
+        const rb = await r.json().catch(() => ({}));
+        if (!r.ok) { toast(rb.detail || "تعذر الحذف"); return; }
+        toast("تم حذف " + del.dataset.name);
+        loadCounts();
+      } catch (_) { toast("تعذر الاتصال بالخادم"); }
+      return;
+    }
     const b = e.target.closest("[data-dl-count]");
     if (!b) return;
     try { await downloadBlob("/api/counts/" + b.dataset.dlCount + "/excel", { headers: { "X-Access-Key": state.key } }, b.dataset.name + ".xlsx"); }
