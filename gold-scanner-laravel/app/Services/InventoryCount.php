@@ -194,7 +194,12 @@ class InventoryCount
         $book->addSheet($sh2);
         $this->fillMissingSheet($sh2, $count);
 
-        return [$t1, $t2];
+        $t3 = self::uniqueTitle($book, self::SHEET_PREFIX.'ملخص '.$base);
+        $sh3 = new Worksheet($book, $t3);
+        $book->addSheet($sh3);
+        $this->fillSummarySheet($sh3, $count);
+
+        return [$t1, $t2, $t3];
     }
 
     private function fillCountSheet(Worksheet $sh, array $count): void
@@ -228,10 +233,16 @@ class InventoryCount
             $r++;
         }
         $last = $r - 1;
+        $this->styleHeader($sh, 'R', $last);
+    }
+
+    private function fillSummarySheet(Worksheet $sh, array $count): void
+    {
+        $sh->setRightToLeft(true);
         $s = $count['summary'] ?? $this->summary($count);
-        $r++;
         $lines = [
-            ['ملخص الجرد', $count['name']],
+            ['البيان', 'القيمة'],
+            ['اسم الجرد', $count['name']],
             ['تاريخ الجرد', \Illuminate\Support\Carbon::parse($count['created_at'])->setTimezone(config('app.timezone'))->format('Y-m-d H:i')],
             ['عدد عمليات المسح', $s['scans']],
             ['قطع مختلفة ممسوحة', $s['unique']],
@@ -243,13 +254,13 @@ class InventoryCount
             ['ناقصة (ما اتمسحتش)', $s['missing']],
             ['إجمالي وزن الموجود (جم)', $s['weight_found']],
         ];
-        foreach ($lines as $line) {
-            $sh->setCellValue('A'.$r, $line[0]);
-            $sh->setCellValue('E'.$r, $line[1]);
-            $sh->getStyle("A$r")->getFont()->setBold(true);
-            $r++;
-        }
-        $this->styleHeader($sh, 'R', $last);
+        $sh->fromArray($lines, null, 'A1');
+        $sh->getStyle('A2:A'.count($lines))->getFont()->setBold(true);
+        $sh->getStyle('B1:B'.count($lines))->getAlignment()->setHorizontal('center');
+        $sh->getStyle('A1:B1')->getFont()->setBold(true);
+        $sh->getStyle('A1:B1')->getFill()->setFillType('solid')->getStartColor()->setRGB('D4AF37');
+        $sh->getColumnDimension('A')->setWidth(30);
+        $sh->getColumnDimension('B')->setWidth(22);
     }
 
     private function fillMissingSheet(Worksheet $sh, array $count): void

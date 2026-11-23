@@ -412,7 +412,7 @@ class ScannerTest extends TestCase
         $res = $this->get('/api/counts/'.$c['id'].'/excel', $this->h)->assertOk();
         file_put_contents($f = $this->dir.'/count.xlsx', $res->streamedContent());
         $book = IOFactory::load($f);
-        $this->assertSame(['جرد نوفمبر', 'جرد ناقص نوفمبر'], $book->getSheetNames());
+        $this->assertSame(['جرد نوفمبر', 'جرد ناقص نوفمبر', 'جرد ملخص نوفمبر'], $book->getSheetNames());
         $this->assertSame('00123456', $book->getSheet(0)->getCell('E2')->getValue());
         $this->assertSame(2, $book->getSheet(0)->getCell('R3')->getValue());     // 6280001001 scanned twice
 
@@ -420,16 +420,16 @@ class ScannerTest extends TestCase
         $before = md5_file($this->dir.'/files/inventory.xls');
         $res = $this->get('/api/counts/'.$c['id'].'/with-file/'.$fileId, $this->h)->assertOk();
         file_put_contents($f = $this->dir.'/copy.xls', $res->streamedContent());
-        $this->assertSame(['Inventory', 'جرد نوفمبر', 'جرد ناقص نوفمبر'], IOFactory::load($f)->getSheetNames());
+        $this->assertSame(['Inventory', 'جرد نوفمبر', 'جرد ناقص نوفمبر', 'جرد ملخص نوفمبر'], IOFactory::load($f)->getSheetNames());
         $this->assertSame($before, md5_file($this->dir.'/files/inventory.xls'));
         $this->get('/api/counts/'.$c['id'].'/with-file/nope', $this->h)->assertStatus(422);
 
         // append as new sheets to the inventory file itself (backup kept), inventory not duplicated
         $this->postJson('/api/counts/'.$c['id'].'/append', ['file_id' => $fileId], $this->h + ['X-Admin-Key' => 'x'])->assertStatus(401);
         $this->postJson('/api/counts/'.$c['id'].'/append', ['file_id' => $fileId], $this->h + ['X-Admin-Key' => 'adm'])
-            ->assertOk()->assertJsonPath('sheets', ['جرد نوفمبر', 'جرد ناقص نوفمبر']);
+            ->assertOk()->assertJsonPath('sheets', ['جرد نوفمبر', 'جرد ناقص نوفمبر', 'جرد ملخص نوفمبر']);
         $names = IOFactory::load($this->dir.'/files/inventory.xls')->getSheetNames();
-        $this->assertSame(['Inventory', 'جرد نوفمبر', 'جرد ناقص نوفمبر'], $names);
+        $this->assertSame(['Inventory', 'جرد نوفمبر', 'جرد ناقص نوفمبر', 'جرد ملخص نوفمبر'], $names);
         $this->assertNotEmpty(glob($this->dir.'/backups/*.xls'));
         $this->app->forgetInstance(InventoryStore::class);
         $fresh = new InventoryStore(config('goldscanner'), $this->dir);
@@ -439,7 +439,7 @@ class ScannerTest extends TestCase
         // a second count on the same file gets new, unique sheet names
         $c2 = $this->postJson('/api/counts', ['name' => 'جرد نوفمبر', 'channel' => 'jard', 'ids' => [1], 'file_id' => $fileId], $this->h)->json('count');
         $this->postJson('/api/counts/'.$c2['id'].'/append', ['file_id' => $fileId], $this->h + ['X-Admin-Key' => 'adm'])
-            ->assertOk()->assertJsonPath('sheets', ['جرد نوفمبر (2)', 'جرد ناقص نوفمبر (2)']);
+            ->assertOk()->assertJsonPath('sheets', ['جرد نوفمبر (2)', 'جرد ناقص نوفمبر (2)', 'جرد ملخص نوفمبر (2)']);
 
         // download the updated file
         $this->get('/api/files/'.$fileId.'/download', $this->h + ['X-Admin-Key' => 'adm'])->assertOk();
